@@ -11,7 +11,10 @@ namespace DynamicIsland.Windows.Services;
 /// </summary>
 public sealed class PrivacySensorService(LoggingService log) : IDisposable
 {
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _timer = new(DispatcherPriority.Background)
+    {
+        Interval = TimeSpan.FromSeconds(3)
+    };
 
     public event EventHandler<PrivacySensorState>? Changed;
     public PrivacySensorState Current { get; private set; } = PrivacySensorState.None;

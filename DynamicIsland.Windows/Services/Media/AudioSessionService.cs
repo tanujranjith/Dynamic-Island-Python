@@ -71,7 +71,11 @@ public sealed class AudioSessionService(LoggingService log) : IDisposable
                 Current = next;
                 Changed?.Invoke(this, next);
             }
-            _shutdown.Token.WaitHandle.WaitOne(300);
+
+            // Core Audio enumeration is relatively expensive. Keep controls responsive while
+            // audio is active, but back off when the machine is silent or audio is unavailable.
+            var delay = next.ActiveAudioOutput ? 400 : 1000;
+            _shutdown.Token.WaitHandle.WaitOne(delay);
         }
     }
 

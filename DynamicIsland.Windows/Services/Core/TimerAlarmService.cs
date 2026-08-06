@@ -17,6 +17,8 @@ public sealed class TimerAlarmService : IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly TimeSpan AlarmTimeout = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan TimerDoneVisibility = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ActiveTickInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan IdleTickInterval = TimeSpan.FromSeconds(30);
     private readonly LoggingService _log;
     private readonly DispatcherTimer _tickTimer = new(DispatcherPriority.Background)
     {
@@ -43,7 +45,11 @@ public sealed class TimerAlarmService : IDisposable
         _tickTimer.Tick += (_, _) => Tick();
     }
 
-    public void Start() => _tickTimer.Start();
+    public void Start()
+    {
+        UpdateTickInterval();
+        _tickTimer.Start();
+    }
 
     public TimeSpan TimerRemaining
     {
@@ -232,6 +238,7 @@ public sealed class TimerAlarmService : IDisposable
         }
 
         if (dirty) Save();
+        UpdateTickInterval();
 
         // Only ask the UI to refresh while there is time-sensitive state. Previously this
         // raised bindings continuously even when no timer or alarm was active.
@@ -305,7 +312,32 @@ public sealed class TimerAlarmService : IDisposable
     private void SaveAndNotify()
     {
         Save();
+        UpdateTickInterval();
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void UpdateTickInterval()
+    {
+        var timerNeedsUpdates = State.Timer.Phase == TimerPhase.Running ||
+            State.Timer.Phase == TimerPhase.Completed && !State.Timer.CompletionAcknowledged;
+        var alarm = State.Alarm;
+
+        var interval = timerNeedsUpdates || alarm.Phase == AlarmPhase.Ringing
+            ? ActiveTickInterval
+            : IdleTickInterval;
+
+        if (!timerNeedsUpdates && alarm.Phase is AlarmPhase.Scheduled or AlarmPhase.Snoozed)
+        {
+            var target = alarm.Phase == AlarmPhase.Snoozed ? alarm.SnoozeUntil : alarm.TargetAt;
+            if (target is not null)
+            {
+                var untilDue = target.Value - DateTimeOffset.Now;
+                interval = TimeSpan.FromMilliseconds(Math.Clamp(
+                    untilDue.TotalMilliseconds, ActiveTickInterval.TotalMilliseconds, IdleTickInterval.TotalMilliseconds));
+            }
+        }
+
+        if (_tickTimer.Interval != interval) _tickTimer.Interval = interval;
     }
 
     private void Save()

@@ -15,7 +15,8 @@ public sealed class AudioSpectrumService(LoggingService log) : IDisposable
     private static readonly double[] Frequencies = { 60, 150, 400, 1000, 2500, 6000, 11000 };
     private const int Window = 1024;
 
-    private readonly CancellationTokenSource _shutdown = new();
+    private readonly object _lifecycleLock = new();
+    private CancellationTokenSource? _shutdown;
     private Thread? _thread;
     private readonly double[] _bands = new double[BandCount];
     private readonly float[] _buffer = new float[Window];
@@ -27,13 +28,40 @@ public sealed class AudioSpectrumService(LoggingService log) : IDisposable
 
     public void Start()
     {
-        if (_thread is not null) return;
-        _thread = new Thread(Loop) { IsBackground = true, Name = "DynamicIsland.Spectrum" };
-        _thread.SetApartmentState(ApartmentState.MTA);
-        _thread.Start();
+        lock (_lifecycleLock)
+        {
+            if (_thread is not null) return;
+            var shutdown = new CancellationTokenSource();
+            _shutdown = shutdown;
+            _thread = new Thread(() => Loop(shutdown.Token))
+            {
+                IsBackground = true,
+                Name = "DynamicIsland.Spectrum"
+            };
+            _thread.SetApartmentState(ApartmentState.MTA);
+            _thread.Start();
+        }
     }
 
-    private void Loop()
+    public void Stop()
+    {
+        Thread? thread;
+        CancellationTokenSource? shutdown;
+        lock (_lifecycleLock)
+        {
+            thread = _thread;
+            shutdown = _shutdown;
+            if (thread is null || shutdown is null) return;
+            _thread = null;
+            _shutdown = null;
+            shutdown.Cancel();
+        }
+        // Do not dispose the token source while a stalled native call could still return
+        // to the loop and access its token. A normal stop completes well within this bound.
+        if (thread.Join(TimeSpan.FromSeconds(2))) shutdown.Dispose();
+    }
+
+    private void Loop(CancellationToken token)
     {
         IMMDevice? device = null;
         IAudioClient? client = null;
@@ -57,10 +85,10 @@ public sealed class AudioSpectrumService(LoggingService log) : IDisposable
             var isFloat = format.wFormatTag == 3 || (format.wFormatTag == 0xFFFE && format.wBitsPerSample == 32);
             var sampleRate = format.nSamplesPerSec;
 
-            while (!_shutdown.IsCancellationRequested)
+            while (!token.IsCancellationRequested)
             {
                 Marshal.ThrowExceptionForHR(capture.GetNextPacketSize(out var packetFrames));
-                if (packetFrames == 0) { _shutdown.Token.WaitHandle.WaitOne(12); continue; }
+                if (packetFrames == 0) { token.WaitHandle.WaitOne(12); continue; }
 
                 while (packetFrames != 0)
                 {
@@ -121,7 +149,7 @@ public sealed class AudioSpectrumService(LoggingService log) : IDisposable
         }
 
         var now = Environment.TickCount64;
-        if (now - _lastEmit < 33) return; // ~30 fps
+        if (now - _lastEmit < 50) return; // 20 fps is smooth at the visualizer's small size
         _lastEmit = now;
         BandsChanged?.Invoke(this, (double[])_bands.Clone());
     }
@@ -141,8 +169,6 @@ public sealed class AudioSpectrumService(LoggingService log) : IDisposable
 
     public void Dispose()
     {
-        _shutdown.Cancel();
-        _thread?.Join(TimeSpan.FromSeconds(1));
-        _shutdown.Dispose();
+        Stop();
     }
 }

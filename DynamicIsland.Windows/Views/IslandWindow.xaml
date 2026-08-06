@@ -589,91 +589,91 @@
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.2" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.2" To="0.4" Duration="0:0:0.46" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.2" To="0.4" Duration="0:0:0.46" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.28" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.28" To="0.55" Duration="0:0:0.4" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.1" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.28" To="0.55" Duration="0:0:0.4" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.1" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.25" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.25" To="0.5" Duration="0:0:0.52" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.04" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.25" To="0.5" Duration="0:0:0.52" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.04" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.35" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.35" To="0.7" Duration="0:0:0.36" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.16" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.35" To="0.7" Duration="0:0:0.36" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.16" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.31" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.31" To="0.62" Duration="0:0:0.5" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.02" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.31" To="0.62" Duration="0:0:0.5" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.02" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.42" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.42" To="0.85" Duration="0:0:0.34" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.12" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.42" To="0.85" Duration="0:0:0.34" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.12" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.46" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.46" To="0.92" Duration="0:0:0.42" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.06" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.46" To="0.92" Duration="0:0:0.42" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.06" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.5" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.5" To="1" Duration="0:0:0.38" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.5" To="1" Duration="0:0:0.38" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.46" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.46" To="0.92" Duration="0:0:0.44" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.08" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.46" To="0.92" Duration="0:0:0.44" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.08" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.42" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.42" To="0.85" Duration="0:0:0.34" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.14" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.42" To="0.85" Duration="0:0:0.34" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.14" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.31" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.31" To="0.62" Duration="0:0:0.5" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.02" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.31" To="0.62" Duration="0:0:0.5" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.02" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.35" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.35" To="0.7" Duration="0:0:0.36" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.16" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.35" To="0.7" Duration="0:0:0.36" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.16" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.25" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.25" To="0.5" Duration="0:0:0.52" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.05" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.25" To="0.5" Duration="0:0:0.52" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.05" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.28" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.28" To="0.55" Duration="0:0:0.4" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.1" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.28" To="0.55" Duration="0:0:0.4" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.1" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                     <Rectangle Style="{StaticResource WaveBar}">
                                         <Rectangle.RenderTransform><ScaleTransform ScaleY="0.2" /></Rectangle.RenderTransform>
                                         <Rectangle.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
-                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.2" To="0.4" Duration="0:0:0.46" AutoReverse="True" RepeatBehavior="Forever" BeginTime="0:0:0.07" />
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" From="0.2" To="0.4" Duration="0:0:0.46" AutoReverse="True" RepeatBehavior="Forever" Timeline.DesiredFrameRate="15" BeginTime="0:0:0.07" />
                                         </Storyboard></BeginStoryboard></EventTrigger></Rectangle.Triggers>
                                     </Rectangle>
                                 </StackPanel>

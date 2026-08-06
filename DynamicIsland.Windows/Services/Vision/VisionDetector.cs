@@ -23,6 +23,7 @@ internal sealed class VisionDetector : IDisposable
     private const int FrameHeight = 360;
     private const int PreviewWidth = 960;      // preview is encoded from the full-res frame, not detection size
     private const int PreviewHeight = 540;
+    private const int PreviewJpegQuality = 82;
     private const int BlobSize = 416;
     private const float PersonConfidence = 0.32f;
     private const float NmsThreshold = 0.42f;
@@ -210,7 +211,8 @@ internal sealed class VisionDetector : IDisposable
                 var colour = owners.Contains(i) ? new Scalar(88, 209, 48) : new Scalar(48, 59, 255);
                 Cv2.Rectangle(small, Scale(people[i], sx, sy), colour, 3);
             }
-            Cv2.ImEncode(".jpg", small, out var buffer, new ImageEncodingParam(ImwriteFlags.JpegQuality, 90));
+            Cv2.ImEncode(".jpg", small, out var buffer,
+                new ImageEncodingParam(ImwriteFlags.JpegQuality, PreviewJpegQuality));
             return buffer;
         }
         catch (Exception ex) { _log.Error("Preview encode failed", ex); return null; }
@@ -252,7 +254,8 @@ internal sealed class VisionDetector : IDisposable
                     double sx = PreviewWidth / (double)FrameWidth, sy = PreviewHeight / (double)FrameHeight;
                     Cv2.Rectangle(small, Scale(fb, sx, sy), new Scalar(88, 209, 48), 3);
                 }
-                Cv2.ImEncode(".jpg", small, out var buf, new ImageEncodingParam(ImwriteFlags.JpegQuality, 90));
+                Cv2.ImEncode(".jpg", small, out var buf,
+                    new ImageEncodingParam(ImwriteFlags.JpegQuality, PreviewJpegQuality));
                 preview = buf;
             }
             catch { preview = null; }

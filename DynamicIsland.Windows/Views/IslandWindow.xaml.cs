@@ -20,6 +20,7 @@ public partial class IslandWindow : Window
     private readonly DispatcherTimer _collapseTimer = new();
     private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromSeconds(4) };
     private readonly DispatcherTimer _fullscreenTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private double _maintenanceElapsedSeconds;
     private bool _sourceReady;
     private bool _dragging;
     private bool _dimmed;
@@ -47,7 +48,22 @@ public partial class IslandWindow : Window
             _idleTimer.Stop();
             if (_viewModel.Settings.IdleDimming && !GlassShell.IsMouseOver) SetDimmed(true);
         };
-        _fullscreenTimer.Tick += (_, _) => { CheckFullscreen(); CheckFollowScreen(); EnsureHealthy(); };
+        _fullscreenTimer.Tick += (_, _) =>
+        {
+            var settings = _viewModel.Settings;
+            if (settings.AutoHideFullscreen || _hiddenForFullscreen) CheckFullscreen();
+            if (settings.FollowActiveScreen ||
+                settings.PreferredMonitor.StartsWith("Active", StringComparison.OrdinalIgnoreCase))
+                CheckFollowScreen();
+
+            _maintenanceElapsedSeconds += _fullscreenTimer.Interval.TotalSeconds;
+            if (_maintenanceElapsedSeconds >= 5)
+            {
+                _maintenanceElapsedSeconds = 0;
+                EnsureHealthy();
+            }
+        };
+        UpdateMaintenanceInterval();
         _fullscreenTimer.Start();
         SourceInitialized += (_, _) =>
         {
@@ -78,10 +94,20 @@ public partial class IslandWindow : Window
 
     public void ApplySettings()
     {
+        UpdateMaintenanceInterval();
         _position.ApplyWindowStyles(this, _viewModel.Settings, _viewModel.IsCompact);
         ApplyLayout(animate: false);
         ApplyFrost();
         EnsureHealthy();
+    }
+
+    private void UpdateMaintenanceInterval()
+    {
+        var settings = _viewModel.Settings;
+        var needsFastChecks = settings.AutoHideFullscreen || settings.FollowActiveScreen ||
+            settings.PreferredMonitor.StartsWith("Active", StringComparison.OrdinalIgnoreCase);
+        _fullscreenTimer.Interval = TimeSpan.FromSeconds(needsFastChecks ? 1 : 5);
+        _maintenanceElapsedSeconds = 0;
     }
 
     /// <summary>Force the island back into view (used by the tray "Recenter").</summary>

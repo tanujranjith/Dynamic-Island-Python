@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using DynamicIsland.Windows.Infrastructure;
 using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
@@ -11,6 +13,9 @@ namespace DynamicIsland.Windows.ViewModels;
 
 public sealed class IslandViewModel : ObservableObject, IDisposable
 {
+    private static readonly ConcurrentDictionary<string, MediaBrush> BrushCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<(double Size, double Radius), Geometry> RingGeometryCache = new();
     private readonly MediaSessionService _mediaService;
     private readonly AudioSessionService _audioService;
     private readonly BatteryService _batteryService;
@@ -34,6 +39,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private DateTimeOffset _volumeWarnCooldownUntil = DateTimeOffset.MinValue;
     private int _lastWarnedVolumePercent;
     private IReadOnlyList<StockQuote> _stocks = [];
+    private IReadOnlyList<StockTile> _stockTiles = [];
+    private IReadOnlyList<WorldClock> _worldClocks = [];
+    private IReadOnlyList<LaunchEntry> _launchItems = [];
+    private (string Label, TimeZoneInfo Zone)[] _worldClockZones = [];
+    private string _worldClockConfig = string.Empty;
+    private string[] _expandedOrder = ["media", "volume", "status"];
     private MeetingInfo? _meeting;
     private NotificationInfo? _notification;
     private int _notificationSeq;
@@ -50,7 +61,10 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private bool _keepExpanded;
     private bool _isDarkTheme = true;
     private BitmapImage? _artwork;
+    private byte[]? _artworkBytes;
     private BitmapImage? _cameraPreview;
+    private byte[]? _pendingPreviewFrame;
+    private int _previewDispatchPending;
     private bool _previewRetained;
 
     public IslandViewModel(AppSettings settings, MediaSessionService mediaService,
@@ -234,14 +248,21 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     // Rolling network-throughput sparkline (last N samples, drawn into a small box).
     private const int SparkHistoryLength = 24;
     private readonly Queue<double> _netHistory = new();
-    public PointCollection NetSparkline => Sparkline(_netHistory, 46, 16); // auto-scaled to the window's peak
+    private PointCollection _netSparkline = Sparkline([], 46, 16);
+    public PointCollection NetSparkline => _netSparkline; // auto-scaled to the window's peak
 
     // Builds a polyline for a series in a w×h box. Without fixed bounds it auto-scales to the sample range.
     private static PointCollection Sparkline(IEnumerable<double> source, double w, double h, double? fixedMin = null, double? fixedMax = null)
     {
         var samples = source as IReadOnlyList<double> ?? source.ToArray();
         var pts = new PointCollection();
-        if (samples.Count == 0) { pts.Add(new System.Windows.Point(0, h)); pts.Add(new System.Windows.Point(w, h)); return pts; }
+        if (samples.Count == 0)
+        {
+            pts.Add(new System.Windows.Point(0, h));
+            pts.Add(new System.Windows.Point(w, h));
+            pts.Freeze();
+            return pts;
+        }
         var min = fixedMin ?? samples.Min();
         var max = fixedMax ?? samples.Max();
         var range = Math.Max(1e-9, max - min);
@@ -252,6 +273,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             var norm = Math.Clamp((samples[i] - min) / range, 0, 1);
             pts.Add(new System.Windows.Point(x, h - norm * (h - 1) - 0.5));
         }
+        pts.Freeze();
         return pts;
     }
 
@@ -270,25 +292,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     // ===== World clocks =====
     public bool ShowWorldClocks => Settings.ShowWorldClocks && WorldClocks.Count > 0;
-    public IReadOnlyList<WorldClock> WorldClocks
-    {
-        get
-        {
-            var list = new List<WorldClock>();
-            foreach (var id in (Settings.WorldClockZones ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                try
-                {
-                    var tz = TimeZoneInfo.FindSystemTimeZoneById(id);
-                    var t = TimeZoneInfo.ConvertTime(_now, tz);
-                    var fmt = Settings.Use24HourClock ? "HH:mm" : "h:mm tt";
-                    list.Add(new WorldClock(ShortZone(id), t.ToString(fmt)));
-                }
-                catch { }
-            }
-            return list;
-        }
-    }
+    public IReadOnlyList<WorldClock> WorldClocks => _worldClocks;
     private static string ShortZone(string id)
     {
         var t = id.Replace(" Standard Time", "").Replace(" Daylight Time", "");
@@ -298,9 +302,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     // ===== Stocks =====
     public bool ShowStocks => Settings.ShowStocks && _stocks.Count > 0;
-    public IReadOnlyList<StockTile> Stocks => _stocks
-        .Select(q => new StockTile(q.Symbol, q.PriceText, q.ChangeText, q.Up, Sparkline(q.History, 34, 12)))
-        .ToList();
+    public IReadOnlyList<StockTile> Stocks => _stockTiles;
 
     // ===== Next meeting =====
     public bool ShowNextMeeting => Settings.ShowNextMeeting && _meeting is not null;
@@ -314,21 +316,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     // ===== Quick launch =====
     public bool ShowQuickLaunch => Settings.ShowQuickLaunch && LaunchItems.Count > 0;
-    public IReadOnlyList<LaunchEntry> LaunchItems
-    {
-        get
-        {
-            var list = new List<LaunchEntry>();
-            foreach (var line in (Settings.QuickLaunchItems ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                var parts = line.Split('|', 2);
-                var name = parts[0].Trim();
-                var path = parts.Length > 1 ? parts[1].Trim() : parts[0].Trim();
-                if (path.Length > 0) list.Add(new LaunchEntry(name, path, string.IsNullOrEmpty(name) ? "?" : name[..1].ToUpperInvariant()));
-            }
-            return list;
-        }
-    }
+    public IReadOnlyList<LaunchEntry> LaunchItems => _launchItems;
 
     public bool ShowClipboard => Settings.ShowClipboard;
     // True when any of the grouped live-activity widgets is enabled (so the panel can be shown/hidden cleanly).
@@ -374,8 +362,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private double Band(int i) => i < _spectrum.Length ? Math.Clamp(_spectrum[i], 0.08, 1.0) : 0.1;
 
     // ===== Expanded module order (album is fixed at column 0; these occupy 1..3) =====
-    private string[] Order => (Settings.ExpandedOrder ?? "media,volume,status")
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    private string[] Order => _expandedOrder;
     public int MediaColumn => ColumnOf("media", 1);
     public int VolumeColumn => ColumnOf("volume", 2);
     public int StatusColumn => ColumnOf("status", 3);
@@ -544,13 +531,43 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _mediaService.SetPreferredApp(Settings.SelectedMediaApp);
         IsDarkTheme = _themeService.IsDark(Settings.Theme);
         if (Settings.AlwaysExpanded) IsExpanded = true;
+        UpdateCachedSettings();
         UpdatePreviewRetention();
         RaiseComputed();
         RaisePropertyChanged(nameof(PinExpanded));
         RaisePropertyChanged(nameof(UiFontFamily));
     }
 
-    private void OnMediaChanged(object? sender, MediaInfo value) => OnUi(() => { Media = value; RaiseComputed(); });
+    private void OnMediaChanged(object? sender, MediaInfo value) => OnUi(() =>
+    {
+        var previous = Media;
+        Media = value;
+        if (MediaPresentationChanged(previous, value))
+        {
+            RaiseComputed();
+            return;
+        }
+
+        // The normal playing update changes only position and UpdatedAt. Refresh just the
+        // progress/time bindings instead of re-evaluating the entire island twice per second.
+        RaiseMany(nameof(MediaProgress), nameof(MediaElapsedText), nameof(MediaTimeRemaining),
+            nameof(MediaTrailingTimeText));
+    });
+
+    private static bool MediaPresentationChanged(MediaInfo previous, MediaInfo current) =>
+        !string.Equals(previous.Title, current.Title, StringComparison.Ordinal) ||
+        !string.Equals(previous.Artist, current.Artist, StringComparison.Ordinal) ||
+        !string.Equals(previous.Album, current.Album, StringComparison.Ordinal) ||
+        !string.Equals(previous.SourceAppId, current.SourceAppId, StringComparison.Ordinal) ||
+        !string.Equals(previous.SourceAppName, current.SourceAppName, StringComparison.Ordinal) ||
+        previous.PlaybackState != current.PlaybackState ||
+        previous.CanPlayPause != current.CanPlayPause ||
+        previous.CanPrevious != current.CanPrevious ||
+        previous.CanNext != current.CanNext ||
+        previous.CanSeek != current.CanSeek ||
+        previous.Duration != current.Duration ||
+        previous.IsExplicit != current.IsExplicit ||
+        !ReferenceEquals(previous.Artwork, current.Artwork);
     private void OnAudioChanged(object? sender, AudioState value) => OnUi(() =>
     {
         var isAbove = Settings.VolumeWarningEnabled
@@ -574,11 +591,33 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseComputed();
     });
 
-    private void OnVisionFrame(object? sender, byte[] jpeg) => OnUi(() =>
+    private void OnVisionFrame(object? sender, byte[] jpeg)
     {
         if (!_isExpanded || !Settings.VisionEnabled) return;
+        Interlocked.Exchange(ref _pendingPreviewFrame, jpeg);
+        if (Interlocked.CompareExchange(ref _previewDispatchPending, 1, 0) != 0) return;
+        QueuePreviewFrame();
+    }
+
+    private void QueuePreviewFrame()
+    {
         try
         {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                DispatcherPriority.Render, new Action(ProcessPendingPreviewFrame));
+        }
+        catch
+        {
+            Volatile.Write(ref _previewDispatchPending, 0);
+        }
+    }
+
+    private void ProcessPendingPreviewFrame()
+    {
+        var jpeg = Interlocked.Exchange(ref _pendingPreviewFrame, null);
+        try
+        {
+            if (jpeg is null || !_isExpanded || !Settings.VisionEnabled) return;
             var image = new BitmapImage();
             using var stream = new MemoryStream(jpeg);
             image.BeginInit();
@@ -589,9 +628,17 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             _cameraPreview = image;
         }
         catch { return; }
+        finally
+        {
+            Volatile.Write(ref _previewDispatchPending, 0);
+            if (Volatile.Read(ref _pendingPreviewFrame) is not null &&
+                Interlocked.CompareExchange(ref _previewDispatchPending, 1, 0) == 0)
+                QueuePreviewFrame();
+        }
+
         RaisePropertyChanged(nameof(CameraPreview));
         RaisePropertyChanged(nameof(ShowCameraPreview));
-    });
+    }
 
     private void OnWeatherChanged(object? sender, WeatherInfo? value) => OnUi(() =>
     {
@@ -603,12 +650,16 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _sysStats = value;
         _netHistory.Enqueue(value.NetBytesPerSec);
         while (_netHistory.Count > SparkHistoryLength) _netHistory.Dequeue();
+        _netSparkline = Sparkline(_netHistory, 46, 16);
         RaiseMany(nameof(ShowSystemMonitor), nameof(ShowCompactRam), nameof(CpuText), nameof(RamText), nameof(NetText),
             nameof(RamPercentValue), nameof(NetSparkline));
     });
     private void OnStocksChanged(object? sender, IReadOnlyList<StockQuote> value) => OnUi(() =>
     {
         _stocks = value;
+        _stockTiles = value
+            .Select(q => new StockTile(q.Symbol, q.PriceText, q.ChangeText, q.Up, Sparkline(q.History, 34, 12)))
+            .ToArray();
         RaiseMany(nameof(ShowStocks), nameof(Stocks));
     });
     private void OnMeetingChanged(object? sender, MeetingInfo? value) => OnUi(() =>
@@ -693,6 +744,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     private void ClearPreview()
     {
+        Interlocked.Exchange(ref _pendingPreviewFrame, null);
         if (_cameraPreview is null) return;
         _cameraPreview = null;
         RaisePropertyChanged(nameof(CameraPreview));
@@ -704,12 +756,17 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private void OnClockTick(object? sender, DateTimeOffset value) => OnUi(() =>
     {
         _now = value;
+        UpdateWorldClockValues();
         RaiseMany(nameof(ClockText), nameof(ClockTimeText), nameof(ClockAmPm), nameof(DateText), nameof(DateLongText),
             nameof(CompactPrimaryText), nameof(CompactSecondaryText),
             nameof(CountdownText), nameof(WorldClocks), nameof(MeetingWhen));
     });
     private void RaiseMany(params string[] names) { foreach (var n in names) RaisePropertyChanged(n); }
-    private void OnTimerAlarmChanged(object? sender, EventArgs e) => OnUi(RaiseComputed);
+    private void OnTimerAlarmChanged(object? sender, EventArgs e) => OnUi(() => RaiseMany(
+        nameof(TimerText), nameof(TimerProgress), nameof(AlarmText), nameof(PrimaryActivity),
+        nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText),
+        nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowCompactTimerRing),
+        nameof(ShowCompactRingTrack)));
     private void OnSystemThemeChanged(object? sender, EventArgs e) => OnUi(() =>
     {
         IsDarkTheme = _themeService.IsDark(Settings.Theme);
@@ -764,14 +821,66 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         (ToggleMuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private static MediaBrush FrozenBrush(string value)
+    private static MediaBrush FrozenBrush(string value) => BrushCache.GetOrAdd(value, static color =>
     {
-        var brush = (MediaBrush)new System.Windows.Media.BrushConverter().ConvertFromString(value)!;
+        var brush = (MediaBrush)new System.Windows.Media.BrushConverter().ConvertFromString(color)!;
         brush.Freeze();
         return brush;
+    });
+
+    public void RefreshLaunchAndZones()
+    {
+        UpdateCachedSettings();
+        RaiseMany(nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowWorldClocks), nameof(WorldClocks));
     }
 
-    public void RefreshLaunchAndZones() => RaiseMany(nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowWorldClocks), nameof(WorldClocks));
+    private void UpdateCachedSettings()
+    {
+        _expandedOrder = (Settings.ExpandedOrder ?? "media,volume,status")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (_expandedOrder.Length == 0) _expandedOrder = ["media", "volume", "status"];
+
+        var launchItems = new List<LaunchEntry>();
+        foreach (var line in (Settings.QuickLaunchItems ?? "")
+                     .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split('|', 2);
+            var name = parts[0].Trim();
+            var path = parts.Length > 1 ? parts[1].Trim() : parts[0].Trim();
+            if (path.Length > 0)
+                launchItems.Add(new LaunchEntry(name, path,
+                    string.IsNullOrEmpty(name) ? "?" : name[..1].ToUpperInvariant()));
+        }
+        _launchItems = launchItems;
+
+        var config = Settings.WorldClockZones ?? string.Empty;
+        if (!string.Equals(config, _worldClockConfig, StringComparison.Ordinal))
+        {
+            _worldClockConfig = config;
+            var zones = new List<(string Label, TimeZoneInfo Zone)>();
+            foreach (var id in config.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                try { zones.Add((ShortZone(id), TimeZoneInfo.FindSystemTimeZoneById(id))); }
+                catch { }
+            }
+            _worldClockZones = zones.ToArray();
+        }
+        UpdateWorldClockValues();
+    }
+
+    private void UpdateWorldClockValues()
+    {
+        if (_worldClockZones.Length == 0)
+        {
+            _worldClocks = [];
+            return;
+        }
+
+        var format = Settings.Use24HourClock ? "HH:mm" : "h:mm tt";
+        _worldClocks = _worldClockZones
+            .Select(zone => new WorldClock(zone.Label, TimeZoneInfo.ConvertTime(_now, zone.Zone).ToString(format)))
+            .ToArray();
+    }
 
     private static double RoundedSquarePerimeter(double size, double radius)
     {
@@ -783,6 +892,11 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private static Geometry RoundedSquare(double s, double r)
     {
         r = Math.Clamp(r, 0.0001, s / 2);
+        return RingGeometryCache.GetOrAdd((s, r), static key => BuildRoundedSquare(key.Size, key.Radius));
+    }
+
+    private static Geometry BuildRoundedSquare(double s, double r)
+    {
         var figure = new PathFigure { StartPoint = new System.Windows.Point(s / 2, 0), IsClosed = true };
         var size = new System.Windows.Size(r, r);
         void Line(double x, double y) => figure.Segments.Add(new LineSegment(new System.Windows.Point(x, y), true));
@@ -800,6 +914,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     private void UpdateArtwork(byte[]? bytes)
     {
+        if (ReferenceEquals(bytes, _artworkBytes)) return;
+        _artworkBytes = bytes;
         _adaptiveAccent = Settings.AdaptiveAccent ? Infrastructure.ImageColor.Dominant(bytes) : null;
         _artwork = null;
         if (bytes is not null)

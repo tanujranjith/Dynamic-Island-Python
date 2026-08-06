@@ -330,6 +330,8 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
     public void Dispose()
     {
         _shutdown.Cancel();
+        try { _pollTask?.Wait(TimeSpan.FromSeconds(2)); }
+        catch (AggregateException ex) when (ex.InnerExceptions.All(e => e is OperationCanceledException)) { }
         _shutdown.Dispose();
     }
 

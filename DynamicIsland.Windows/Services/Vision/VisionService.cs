@@ -61,15 +61,21 @@ public sealed class VisionService(LoggingService log, VisionModelManager models)
     public void Stop()
     {
         Thread? thread;
+        CancellationTokenSource shutdown;
         lock (_lock)
         {
             if (_thread is null) return;
-            _shutdown.Cancel();
+            shutdown = _shutdown;
+            shutdown.Cancel();
             thread = _thread;
             _thread = null;
         }
-        thread.Join(TimeSpan.FromSeconds(2));
-        lock (_lock) { _shutdown = new CancellationTokenSource(); }
+        var stopped = thread.Join(TimeSpan.FromSeconds(2));
+        lock (_lock)
+        {
+            if (stopped) shutdown.Dispose();
+            _shutdown = new CancellationTokenSource();
+        }
         Publish(VisionState.Disabled);
     }
 
@@ -114,7 +120,10 @@ public sealed class VisionService(LoggingService log, VisionModelManager models)
             // The preview runs smoothly (~22 fps) while detection is throttled to _fps — person/face
             // detection is far more expensive than grabbing a frame, so this keeps the feed fluid and the
             // CPU cost reasonable.
-            const int previewFps = 22;
+            // Preview JPEG encoding is one of the most expensive optional paths. Fifteen
+            // frames per second remains fluid in the small island preview while cutting
+            // resize/encode/dispatch work by roughly a third.
+            const int previewFps = 15;
             long lastDetect = 0;
             while (!token.IsCancellationRequested)
             {
@@ -227,10 +236,25 @@ public sealed class VisionService(LoggingService log, VisionModelManager models)
 
     private void Publish(VisionState state)
     {
-        if (state == Current) return;
+        // LastFrameUtc is diagnostic freshness data, not visible state. Do not wake the
+        // WPF binding tree at the detection FPS when the actual decision is unchanged.
+        if (HasSameVisibleState(state, Current))
+        {
+            Current = state;
+            return;
+        }
         Current = state;
         Changed?.Invoke(this, state);
     }
+
+    private static bool HasSameVisibleState(VisionState left, VisionState right) =>
+        left.Availability == right.Availability &&
+        left.DetectorReady == right.DetectorReady &&
+        left.PrivacyOn == right.PrivacyOn &&
+        left.Enrolled == right.Enrolled &&
+        left.Enrolling == right.Enrolling &&
+        left.PeopleCount == right.PeopleCount &&
+        string.Equals(left.OwnerSignature, right.OwnerSignature, StringComparison.Ordinal);
 
     public void Dispose()
     {

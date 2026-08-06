@@ -241,7 +241,9 @@ public partial class App : System.Windows.Application
         _stocks?.Configure(_settings.StockSymbols);
         if (_battery is not null) { _battery.LowThreshold = _settings.LowBatteryThreshold; _battery.WarningsEnabled = _settings.LowBatteryWarning; }
         if (_settings.ShowSystemMonitor || _settings.ShowRamInCompact) _sysMon?.Start();
+        else _sysMon?.Stop();
         if (_settings.RealAudioSpectrum) _spectrum?.Start();
+        else _spectrum?.Stop();
         if (_settings.ShowNextMeeting && !_calendarStarted) { _calendarStarted = true; _ = _calendar!.StartAsync(); }
         if (_settings.ShowNotifications && !_notificationsStarted) { _notificationsStarted = true; _ = _notifications!.StartAsync(); }
     }

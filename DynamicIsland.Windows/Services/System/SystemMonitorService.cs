@@ -12,13 +12,16 @@ namespace DynamicIsland.Windows.Services;
 /// </summary>
 public sealed class SystemMonitorService : IDisposable
 {
-    private readonly CancellationTokenSource _shutdown = new();
+    private readonly object _lifecycleLock = new();
     private readonly int _cores = Math.Max(1, Environment.ProcessorCount);
     private readonly NativeMethods.ProcessorPowerInformation[] _powerInfo;
+    private CancellationTokenSource? _shutdown;
     private Thread? _thread;
     private long _lastIdle, _lastKernel, _lastUser;
     private long _lastBytes;
     private long _lastTicks;
+    private long _networkInterfacesRefreshedAt;
+    private NetworkInterface[] _networkInterfaces = [];
     private double _cpuEma = -1;
 
     public SystemMonitorService()
@@ -31,19 +34,44 @@ public sealed class SystemMonitorService : IDisposable
 
     public void Start()
     {
-        if (_thread is not null) return;
-        _thread = new Thread(Loop) { IsBackground = true, Name = "DynamicIsland.SysMon" };
-        _thread.Start();
+        lock (_lifecycleLock)
+        {
+            if (_thread is not null) return;
+            var shutdown = new CancellationTokenSource();
+            _shutdown = shutdown;
+            _thread = new Thread(() => Loop(shutdown.Token))
+            {
+                IsBackground = true,
+                Name = "DynamicIsland.SysMon"
+            };
+            _thread.Start();
+        }
     }
 
-    private void Loop()
+    public void Stop()
+    {
+        Thread? thread;
+        CancellationTokenSource? shutdown;
+        lock (_lifecycleLock)
+        {
+            thread = _thread;
+            shutdown = _shutdown;
+            if (thread is null || shutdown is null) return;
+            _thread = null;
+            _shutdown = null;
+            shutdown.Cancel();
+        }
+        if (thread.Join(TimeSpan.FromSeconds(2))) shutdown.Dispose();
+    }
+
+    private void Loop(CancellationToken token)
     {
         Prime();
         var sincePublish = 0;
-        while (!_shutdown.IsCancellationRequested)
+        while (!token.IsCancellationRequested)
         {
-            _shutdown.Token.WaitHandle.WaitOne(700);
-            if (_shutdown.IsCancellationRequested) break;
+            token.WaitHandle.WaitOne(700);
+            if (token.IsCancellationRequested) break;
             var next = Read();
             if (++sincePublish >= 2)
             {
@@ -121,19 +149,34 @@ public sealed class SystemMonitorService : IDisposable
     private static readonly string[] VirtualMarkers =
         ["virtual", "hyper-v", "vmware", "vethernet", "pseudo", "loopback", "tap", "tunnel", "bluetooth", "wan miniport"];
 
-    private static long TotalBytes()
+    private long TotalBytes()
     {
+        var now = Environment.TickCount64;
+        if (_networkInterfaces.Length == 0 || now - _networkInterfacesRefreshedAt >= 60_000)
+        {
+            _networkInterfaces = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(IsPhysicalDataInterface)
+                .ToArray();
+            _networkInterfacesRefreshedAt = now;
+        }
+
         long total = 0;
-        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        foreach (var nic in _networkInterfaces)
         {
             if (nic.OperationalStatus != OperationalStatus.Up) continue;
-            if (nic.NetworkInterfaceType is not (NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211 or NetworkInterfaceType.GigabitEthernet)) continue;
-            var desc = (nic.Description + " " + nic.Name).ToLowerInvariant();
-            if (VirtualMarkers.Any(m => desc.Contains(m))) continue;
             var s = nic.GetIPv4Statistics();
             total += s.BytesReceived + s.BytesSent;
         }
         return total;
+    }
+
+    private static bool IsPhysicalDataInterface(NetworkInterface nic)
+    {
+        if (nic.NetworkInterfaceType is not (NetworkInterfaceType.Ethernet or
+            NetworkInterfaceType.Wireless80211 or NetworkInterfaceType.GigabitEthernet)) return false;
+        return !VirtualMarkers.Any(marker =>
+            nic.Description.Contains(marker, StringComparison.OrdinalIgnoreCase) ||
+            nic.Name.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FormatRate(double bytesPerSec)
@@ -145,8 +188,6 @@ public sealed class SystemMonitorService : IDisposable
 
     public void Dispose()
     {
-        _shutdown.Cancel();
-        _thread?.Join(TimeSpan.FromSeconds(1));
-        _shutdown.Dispose();
+        Stop();
     }
 }

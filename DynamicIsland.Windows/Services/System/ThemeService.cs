@@ -8,7 +8,7 @@ public sealed class ThemeService : IDisposable
 {
     private readonly DispatcherTimer _timer = new(DispatcherPriority.Background)
     {
-        Interval = TimeSpan.FromSeconds(2)
+        Interval = TimeSpan.FromSeconds(5)
     };
     private bool _lastSystemDark;
 

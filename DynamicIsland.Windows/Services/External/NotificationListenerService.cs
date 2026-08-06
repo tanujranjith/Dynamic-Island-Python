@@ -16,6 +16,7 @@ public sealed class NotificationListenerService(LoggingService log) : IDisposabl
     private UserNotificationListener? _listener;
     private uint _lastSeenId;
     private bool _primed;
+    private int _polling;
 
     public event EventHandler<NotificationInfo>? Notified;
     public bool IsActive { get; private set; }
@@ -41,6 +42,7 @@ public sealed class NotificationListenerService(LoggingService log) : IDisposabl
     private async Task PollAsync()
     {
         if (_listener is null) return;
+        if (Interlocked.Exchange(ref _polling, 1) != 0) return;
         try
         {
             var notes = await _listener.GetNotificationsAsync(NotificationKinds.Toast);
@@ -59,6 +61,7 @@ public sealed class NotificationListenerService(LoggingService log) : IDisposabl
             _lastSeenId = Math.Max(_lastSeenId, maxId);
         }
         catch (Exception ex) { log.Debug($"Notification poll failed: {ex.Message}"); }
+        finally { Volatile.Write(ref _polling, 0); }
     }
 
     private static NotificationInfo? Extract(UserNotification n)
