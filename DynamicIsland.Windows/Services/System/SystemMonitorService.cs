@@ -14,11 +14,17 @@ public sealed class SystemMonitorService : IDisposable
 {
     private readonly CancellationTokenSource _shutdown = new();
     private readonly int _cores = Math.Max(1, Environment.ProcessorCount);
+    private readonly NativeMethods.ProcessorPowerInformation[] _powerInfo;
     private Thread? _thread;
     private long _lastIdle, _lastKernel, _lastUser;
     private long _lastBytes;
     private long _lastTicks;
     private double _cpuEma = -1;
+
+    public SystemMonitorService()
+    {
+        _powerInfo = new NativeMethods.ProcessorPowerInformation[_cores];
+    }
 
     public event EventHandler<SystemStats>? Changed;
     public SystemStats Current { get; private set; } = SystemStats.Empty;
@@ -102,11 +108,10 @@ public sealed class SystemMonitorService : IDisposable
     {
         try
         {
-            var info = new NativeMethods.ProcessorPowerInformation[_cores];
             var size = (uint)(System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.ProcessorPowerInformation>() * _cores);
-            if (NativeMethods.CallNtPowerInformation(11, nint.Zero, 0, info, size) != 0) return 1.0;
+            if (NativeMethods.CallNtPowerInformation(11, nint.Zero, 0, _powerInfo, size) != 0) return 1.0;
             double cur = 0, max = 0;
-            foreach (var p in info) { cur += p.CurrentMhz; max += p.MaxMhz; }
+            foreach (var p in _powerInfo) { cur += p.CurrentMhz; max += p.MaxMhz; }
             if (max <= 0) return 1.0;
             return Math.Clamp(cur / max, 0.05, 3.0);
         }

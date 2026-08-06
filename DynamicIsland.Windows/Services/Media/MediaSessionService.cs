@@ -13,6 +13,7 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
     private Task? _pollTask;
     private string _preferredApp = "Automatic";
     private string _lastIdentity = string.Empty;
+    private string[] _availableApps = [];
     private byte[]? _artwork;
 
     public event EventHandler<MediaInfo>? Changed;
@@ -146,23 +147,30 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
     {
         while (!token.IsCancellationRequested)
         {
-            try { await RefreshAsync(); }
+            var isPlaying = false;
+            try { isPlaying = await RefreshAsync(); }
             catch (Exception ex) { log.Error("Media session refresh failed", ex); }
-            try { await Task.Delay(500, token); }
+            // Position needs frequent updates while playing. When nothing is playing,
+            // polling less often avoids repeatedly querying media properties in the background.
+            try { await Task.Delay(isPlaying ? 500 : 1500, token); }
             catch (OperationCanceledException) { break; }
         }
     }
 
-    private async Task RefreshAsync()
+    private async Task<bool> RefreshAsync()
     {
-        if (_manager is null) return;
+        if (_manager is null) return false;
         var sessions = _manager.GetSessions().ToArray();
         var apps = sessions.Select(s => s.SourceAppUserModelId)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        AvailableAppsChanged?.Invoke(this, apps);
+        if (!_availableApps.SequenceEqual(apps, StringComparer.OrdinalIgnoreCase))
+        {
+            _availableApps = apps;
+            AvailableAppsChanged?.Invoke(this, apps);
+        }
 
         var current = _manager.GetCurrentSession();
         var candidates = new List<SessionCandidate>();
@@ -196,7 +204,7 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
             _lastIdentity = string.Empty;
             _artwork = null;
             Publish(MediaInfo.Empty);
-            return;
+            return false;
         }
 
         _selectedSession = best.Session;
@@ -227,6 +235,7 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
             Artwork = _artwork,
             UpdatedAt = DateTimeOffset.Now
         });
+        return best.State == MediaPlaybackState.Playing;
     }
 
     // GSMTC reports the position as a snapshot taken at LastUpdatedTime — it does not advance on its

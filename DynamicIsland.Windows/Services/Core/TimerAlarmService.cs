@@ -20,7 +20,9 @@ public sealed class TimerAlarmService : IDisposable
     private readonly LoggingService _log;
     private readonly DispatcherTimer _tickTimer = new(DispatcherPriority.Background)
     {
-        Interval = TimeSpan.FromMilliseconds(200)
+        // The UI displays whole seconds, so a twice-per-second tick keeps it responsive
+        // without waking the dispatcher five times per second for an inactive timer.
+        Interval = TimeSpan.FromMilliseconds(500)
     };
     private readonly string _statePath;
     private System.Threading.Timer? _soundTimer;
@@ -230,7 +232,13 @@ public sealed class TimerAlarmService : IDisposable
         }
 
         if (dirty) Save();
-        Changed?.Invoke(this, EventArgs.Empty);
+
+        // Only ask the UI to refresh while there is time-sensitive state. Previously this
+        // raised bindings continuously even when no timer or alarm was active.
+        if (timer.Phase == TimerPhase.Running ||
+            alarm.Phase is AlarmPhase.Scheduled or AlarmPhase.Snoozed or AlarmPhase.Ringing ||
+            dirty)
+            Changed?.Invoke(this, EventArgs.Empty);
     }
 
     private void StartTimerSound()
