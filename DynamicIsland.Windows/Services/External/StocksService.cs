@@ -50,18 +50,34 @@ public sealed class StocksService(LoggingService log) : IDisposable
         {
             try
             {
-                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{Uri.EscapeDataString(symbol)}?interval=1d&range=1d";
+                // 1-minute intraday points give a smooth sparkline; meta still carries the latest price.
+                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{Uri.EscapeDataString(symbol)}?interval=5m&range=1d";
                 using var doc = JsonDocument.Parse(await _http.GetStringAsync(url));
-                var meta = doc.RootElement.GetProperty("chart").GetProperty("result")[0].GetProperty("meta");
+                var result = doc.RootElement.GetProperty("chart").GetProperty("result")[0];
+                var meta = result.GetProperty("meta");
                 var price = meta.GetProperty("regularMarketPrice").GetDouble();
                 var prev = meta.TryGetProperty("chartPreviousClose", out var cpc) ? cpc.GetDouble()
                     : meta.TryGetProperty("previousClose", out var pc) ? pc.GetDouble() : price;
                 var change = prev > 0 ? (price - prev) / prev * 100 : 0;
-                quotes.Add(new StockQuote(symbol, price, change));
+                quotes.Add(new StockQuote(symbol, price, change, ExtractHistory(result)));
             }
             catch (Exception ex) { log.Debug($"Stock {symbol} fetch failed: {ex.Message}"); }
         }
         Publish(quotes);
+    }
+
+    // Pulls the intraday close series (indicators.quote[0].close), dropping the nulls Yahoo returns for gaps.
+    private static IReadOnlyList<double> ExtractHistory(JsonElement result)
+    {
+        try
+        {
+            var closes = result.GetProperty("indicators").GetProperty("quote")[0].GetProperty("close");
+            var points = new List<double>(closes.GetArrayLength());
+            foreach (var c in closes.EnumerateArray())
+                if (c.ValueKind == JsonValueKind.Number) points.Add(c.GetDouble());
+            return points;
+        }
+        catch { return []; }
     }
 
     private void Publish(IReadOnlyList<StockQuote> quotes)

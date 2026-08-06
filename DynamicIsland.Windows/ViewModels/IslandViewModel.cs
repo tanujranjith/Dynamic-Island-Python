@@ -24,7 +24,15 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private readonly StocksService _stocksService;
     private readonly CalendarService _calendarService;
     private readonly NotificationListenerService _notificationService;
+    private readonly PrivacySensorService _privacyService;
+    private PrivacySensorState _privacy = PrivacySensorState.None;
     private readonly System.Windows.Threading.DispatcherTimer _notificationTimer = new() { Interval = TimeSpan.FromSeconds(6) };
+    private readonly System.Windows.Threading.DispatcherTimer _volumeWarningTimer = new() { Interval = TimeSpan.FromSeconds(6) };
+    private bool _volumeWarningActive;
+    private int _bannerSeq;
+    private bool _prevAboveVolumeThreshold = true; // initialised true so first audio event never triggers
+    private DateTimeOffset _volumeWarnCooldownUntil = DateTimeOffset.MinValue;
+    private int _lastWarnedVolumePercent;
     private IReadOnlyList<StockQuote> _stocks = [];
     private MeetingInfo? _meeting;
     private NotificationInfo? _notification;
@@ -51,7 +59,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         Services.Vision.VisionService visionService, WeatherService weatherService,
         SystemMonitorService systemMonitorService, AudioSpectrumService spectrumService,
         StocksService stocksService, CalendarService calendarService,
-        NotificationListenerService notificationService)
+        NotificationListenerService notificationService, PrivacySensorService privacyService)
     {
         Settings = settings;
         _mediaService = mediaService;
@@ -67,12 +75,13 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _stocksService = stocksService;
         _calendarService = calendarService;
         _notificationService = notificationService;
+        _privacyService = privacyService;
 
         PreviousCommand = new RelayCommand(() => _ = _mediaService.PreviousAsync(), () => Media.CanPrevious);
         PlayPauseCommand = new RelayCommand(() => _ = _mediaService.TogglePlayPauseAsync(), () => Media.CanPlayPause);
         NextCommand = new RelayCommand(() => _ = _mediaService.NextAsync(), () => Media.CanNext);
-        SeekBackCommand = new RelayCommand(() => _ = _mediaService.SeekByAsync(TimeSpan.FromSeconds(-SeekStepSeconds)), () => CanSeek);
-        SeekForwardCommand = new RelayCommand(() => _ = _mediaService.SeekByAsync(TimeSpan.FromSeconds(SeekStepSeconds)), () => CanSeek);
+        SeekBackCommand = new RelayCommand(() => _ = _mediaService.SeekByAsync(TimeSpan.FromSeconds(-SeekBackSeconds)), () => CanSeek);
+        SeekForwardCommand = new RelayCommand(() => _ = _mediaService.SeekByAsync(TimeSpan.FromSeconds(SeekForwardSeconds)), () => CanSeek);
         ToggleMuteCommand = new RelayCommand(() => _audioService.SetMuted(!Audio.SystemMuted),
             () => Audio.Availability == AudioAvailability.Available);
         AdjustVolumeCommand = new RelayCommand<string>(delta =>
@@ -92,12 +101,15 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _stocksService.Changed += OnStocksChanged;
         _calendarService.Changed += OnMeetingChanged;
         _notificationService.Notified += OnNotified;
-        _notificationTimer.Tick += (_, _) => { _notificationTimer.Stop(); _notification = null; RaiseMany(nameof(ShowNotification)); };
+        _privacyService.Changed += OnPrivacyChanged;
+        _notificationTimer.Tick += (_, _) => { _notificationTimer.Stop(); _notification = null; RaiseMany(nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody)); };
+        _volumeWarningTimer.Tick += (_, _) => { _volumeWarningTimer.Stop(); _volumeWarningActive = false; RaiseMany(nameof(ShowBanner)); };
         LaunchCommand = new RelayCommand<string>(LaunchApp);
         OpenMeetingCommand = new RelayCommand(() => { if (!string.IsNullOrWhiteSpace(_meeting?.JoinUrl)) OpenUrl(_meeting!.JoinUrl); });
         SeekCommand = new RelayCommand<double>(f => _ = _mediaService.SeekFractionAsync(f));
         OpenMediaAppCommand = new RelayCommand(() => { if (Settings.ClickArtOpensApp) _mediaService.LaunchSource(); });
         ToggleFavoriteCommand = new RelayCommand(() => IsFavorite = !IsFavorite);
+        SelectOutputDeviceCommand = new RelayCommand<string>(id => { if (!string.IsNullOrEmpty(id)) _audioService.SetDefaultOutputDevice(id); });
         _batteryService.Changed += OnBatteryChanged;
         _clockService.Tick += OnClockTick;
         _timerAlarmService.Changed += OnTimerAlarmChanged;
@@ -182,6 +194,11 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool VisionAlert => ShowVisionStatus && Vision.Alert;
     public bool ShowVisionButton => Settings.VisionEnabled;
 
+    // ===== Mic / camera in-use indicators (read from the Windows privacy consent store) =====
+    public bool ShowCameraInUse => Settings.ShowPrivacyIndicators && _privacy.Camera;
+    public bool ShowMicInUse => Settings.ShowPrivacyIndicators && _privacy.Microphone;
+    public bool ShowPrivacyInUse => ShowCameraInUse || ShowMicInUse;
+
     // ===== Per-element font sizes (each = default × element% × interface%) =====
     private double Scaled(int elementPercent, double baseSize) =>
         baseSize * Math.Clamp(elementPercent, 60, 160) / 100.0 * Math.Clamp(Settings.InterfaceScale, 70, 150) / 100.0;
@@ -214,27 +231,28 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public string NetText => _sysStats.NetworkText;
     // Numeric RAM load (0–100) for the mini-card progress bar in the redesigned status panel.
     public double RamPercentValue => Math.Clamp(_sysStats.RamPercent, 0, 100);
-    // Rolling network-throughput sparkline (last N samples, normalised to a 46×16 box).
-    private const int NetHistoryLength = 18;
+    // Rolling network-throughput sparkline (last N samples, drawn into a small box).
+    private const int SparkHistoryLength = 24;
     private readonly Queue<double> _netHistory = new();
-    public PointCollection NetSparkline
+    public PointCollection NetSparkline => Sparkline(_netHistory, 46, 16); // auto-scaled to the window's peak
+
+    // Builds a polyline for a series in a w×h box. Without fixed bounds it auto-scales to the sample range.
+    private static PointCollection Sparkline(IEnumerable<double> source, double w, double h, double? fixedMin = null, double? fixedMax = null)
     {
-        get
+        var samples = source as IReadOnlyList<double> ?? source.ToArray();
+        var pts = new PointCollection();
+        if (samples.Count == 0) { pts.Add(new System.Windows.Point(0, h)); pts.Add(new System.Windows.Point(w, h)); return pts; }
+        var min = fixedMin ?? samples.Min();
+        var max = fixedMax ?? samples.Max();
+        var range = Math.Max(1e-9, max - min);
+        var step = samples.Count > 1 ? w / (samples.Count - 1) : w;
+        for (int i = 0; i < samples.Count; i++)
         {
-            const double w = 46, h = 16;
-            var pts = new PointCollection();
-            if (_netHistory.Count == 0) { pts.Add(new System.Windows.Point(0, h)); pts.Add(new System.Windows.Point(w, h)); return pts; }
-            var samples = _netHistory.ToArray();
-            var max = Math.Max(1.0, samples.Max());
-            var step = samples.Length > 1 ? w / (samples.Length - 1) : w;
-            for (int i = 0; i < samples.Length; i++)
-            {
-                var x = i * step;
-                var y = h - Math.Clamp(samples[i] / max, 0, 1) * (h - 1) - 0.5;
-                pts.Add(new System.Windows.Point(x, y));
-            }
-            return pts;
+            var x = i * step;
+            var norm = Math.Clamp((samples[i] - min) / range, 0, 1);
+            pts.Add(new System.Windows.Point(x, h - norm * (h - 1) - 0.5));
         }
+        return pts;
     }
 
     // ===== Countdown =====
@@ -280,7 +298,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     // ===== Stocks =====
     public bool ShowStocks => Settings.ShowStocks && _stocks.Count > 0;
-    public IReadOnlyList<StockQuote> Stocks => _stocks;
+    public IReadOnlyList<StockTile> Stocks => _stocks
+        .Select(q => new StockTile(q.Symbol, q.PriceText, q.ChangeText, q.Up, Sparkline(q.History, 34, 12)))
+        .ToList();
 
     // ===== Next meeting =====
     public bool ShowNextMeeting => Settings.ShowNextMeeting && _meeting is not null;
@@ -317,7 +337,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     // Secondary widgets surfaced under the status panel in the redesigned expanded island (weather and the
     // system monitor get their own cards, so they're excluded here). Collapses the strip when nothing's on.
     public bool ShowStatusExtras => ShowBatteryLevel || IsCharging || ShowVisionStatus || ShowStocks
-        || ShowCountdown || ShowNextMeeting || ShowWorldClocks || ShowBatteryTime;
+        || ShowCountdown || ShowNextMeeting || ShowWorldClocks || ShowBatteryTime || ShowPrivacyInUse;
 
     // ===== Outer island corner radius (user-chosen via the slider, 0–48 DIP) =====
     private double ClampedCornerRadius => Math.Clamp(Settings.IslandCornerRadius, 0, 48);
@@ -329,9 +349,17 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public string NotificationApp => _notification?.App ?? string.Empty;
     public string NotificationTitle => _notification?.Title ?? string.Empty;
     public string NotificationBody => _notification?.Body ?? string.Empty;
-    // Increments once per genuinely new notification. The view animates off this (not ShowNotification,
-    // which routine refreshes re-raise) so the entrance plays exactly once instead of restarting per tick.
     public int NotificationSeq => _notificationSeq;
+
+    // ===== Unified banner (Windows notification OR volume warning) =====
+    public bool ShowBanner => ShowNotification || (_volumeWarningActive && Settings.VolumeWarningEnabled);
+    public string BannerApp => _volumeWarningActive && !ShowNotification ? "Volume" : NotificationApp;
+    public string BannerTitle => _volumeWarningActive && !ShowNotification ? "High volume" : NotificationTitle;
+    public string BannerBody => _volumeWarningActive && !ShowNotification
+        ? $"Volume is at {_lastWarnedVolumePercent}% — consider lowering it to protect your hearing."
+        : NotificationBody;
+    // Increments once per new banner event so the view plays the entrance animation exactly once.
+    public int BannerSeq => _bannerSeq;
 
     // ===== Audio spectrum (real, from loopback) =====
     public bool UseRealSpectrum => Settings.RealAudioSpectrum && _spectrumService.IsActive && IsAudioActive;
@@ -398,16 +426,28 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private bool _isFavorite;
     public bool IsFavorite { get => _isFavorite; private set { if (SetProperty(ref _isFavorite, value)) RaisePropertyChanged(nameof(FavoriteGlyph)); } }
     public string FavoriteGlyph => IsFavorite ? "\uEB52" : "\uEB51"; // filled heart vs outline
-    // 10-second rewind / fast-forward controls. Enabled only when the active session reports it can
-    // change position AND exposes a duration; otherwise the buttons disable and explain why via tooltip.
-    private const int SeekStepSeconds = 10;
+    // Rewind / fast-forward controls (10s back, 30s forward). Enabled only when the active session reports
+    // it can change position AND exposes a duration; otherwise the buttons disable and explain why via tooltip.
+    private const int SeekBackSeconds = 10;
+    private const int SeekForwardSeconds = 30;
     public bool CanSeek => Media.CanSeek && Media.Duration.TotalSeconds > 0;
-    public string SeekBackTooltip => CanSeek ? "Back 10 seconds" : "This source doesn't support seeking";
-    public string SeekForwardTooltip => CanSeek ? "Forward 10 seconds" : "This source doesn't support seeking";
+    public string SeekBackTooltip => CanSeek ? $"Back {SeekBackSeconds} seconds" : "This source doesn't support seeking";
+    public string SeekForwardTooltip => CanSeek ? $"Forward {SeekForwardSeconds} seconds" : "This source doesn't support seeking";
     public string VolumeText => $"{Audio.MasterVolumePercent}%";
     public string VolumeGlyph => Audio.SystemMuted ? "\uE74F" : Audio.MasterVolumePercent == 0 ? "\uE992" : "\uE767";
     public string AudioStatusText => Audio.StatusText;
     public string OutputDeviceText => string.IsNullOrWhiteSpace(Audio.OutputDeviceName) ? "System default" : Audio.OutputDeviceName;
+
+    // ===== Output-device picker (populated on demand when the island's output row is clicked) =====
+    public System.Collections.ObjectModel.ObservableCollection<OutputDeviceItem> OutputDevices { get; } = [];
+    public void RefreshOutputDevices()
+    {
+        OutputDevices.Clear();
+        var current = Audio.OutputDeviceName;
+        foreach (var (id, name) in _audioService.GetOutputDevices())
+            OutputDevices.Add(new OutputDeviceItem(id, name, string.Equals(name, current, StringComparison.Ordinal)));
+    }
+    public ICommand SelectOutputDeviceCommand { get; private set; } = null!;
     public string ClockText => _now.ToString(Settings.Use24HourClock
         ? (Settings.ShowSeconds ? "HH:mm:ss" : "HH:mm")
         : (Settings.ShowSeconds ? "h:mm:ss tt" : "h:mm tt"));
@@ -427,7 +467,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         AlarmPhase.Ringing => "Alarm ringing",
         AlarmPhase.Snoozed => $"Snoozed until {_timerAlarmService.State.Alarm.SnoozeUntil:t}",
-        AlarmPhase.Scheduled => $"Alarm {TimerAlarmService.FormatAlarmTime(_timerAlarmService.State.Alarm)}",
+        AlarmPhase.Scheduled => $"Alarm {TimerAlarmService.FormatAlarmTime(_timerAlarmService.State.Alarm)}"
+            + (_timerAlarmService.State.Alarm.Repeat == AlarmRepeat.Once ? "" : $" · {TimerAlarmService.FormatRepeat(_timerAlarmService.State.Alarm.Repeat)}"),
         _ => "No alarm"
     };
 
@@ -510,7 +551,21 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     }
 
     private void OnMediaChanged(object? sender, MediaInfo value) => OnUi(() => { Media = value; RaiseComputed(); });
-    private void OnAudioChanged(object? sender, AudioState value) => OnUi(() => { Audio = value; RaiseComputed(); });
+    private void OnAudioChanged(object? sender, AudioState value) => OnUi(() =>
+    {
+        var isAbove = Settings.VolumeWarningEnabled
+            && value.Availability == AudioAvailability.Available
+            && !value.SystemMuted
+            && value.MasterVolumePercent > Settings.VolumeWarningThreshold;
+        var prevAbove = _prevAboveVolumeThreshold;
+        _prevAboveVolumeThreshold = isAbove;
+
+        Audio = value;
+        RaiseComputed();
+
+        if (isAbove && !prevAbove && DateTimeOffset.Now >= _volumeWarnCooldownUntil)
+            TriggerVolumeWarning(value.MasterVolumePercent);
+    });
     private void OnVisionChanged(object? sender, VisionState value) => OnUi(() =>
     {
         Vision = value;
@@ -547,7 +602,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         _sysStats = value;
         _netHistory.Enqueue(value.NetBytesPerSec);
-        while (_netHistory.Count > NetHistoryLength) _netHistory.Dequeue();
+        while (_netHistory.Count > SparkHistoryLength) _netHistory.Dequeue();
         RaiseMany(nameof(ShowSystemMonitor), nameof(ShowCompactRam), nameof(CpuText), nameof(RamText), nameof(NetText),
             nameof(RamPercentValue), nameof(NetSparkline));
     });
@@ -563,13 +618,43 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     });
     private void OnNotified(object? sender, NotificationInfo value) => OnUi(() =>
     {
-        if (!Settings.ShowNotifications) return;
+        if (!Settings.ShowNotifications || !PassesNotificationFilter(value.App)) return;
         _notification = value;
         _notificationSeq++;
-        RaiseMany(nameof(ShowNotification), nameof(NotificationApp), nameof(NotificationTitle), nameof(NotificationBody), nameof(NotificationSeq));
+        _bannerSeq++;
+        RaiseMany(nameof(ShowNotification), nameof(NotificationApp), nameof(NotificationTitle), nameof(NotificationBody), nameof(NotificationSeq),
+            nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq));
         _notificationTimer.Stop();
         _notificationTimer.Start();
     });
+
+    // Allowlist shows only matching apps; blocklist hides them. Matching is case-insensitive substring.
+    private bool PassesNotificationFilter(string app)
+    {
+        if (Settings.NotificationFilterMode == NotificationFilter.All) return true;
+        var terms = (Settings.NotificationAppFilter ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (terms.Length == 0) return Settings.NotificationFilterMode == NotificationFilter.Blocklist;
+        var matches = terms.Any(t => app.Contains(t, StringComparison.OrdinalIgnoreCase));
+        return Settings.NotificationFilterMode == NotificationFilter.Allowlist ? matches : !matches;
+    }
+
+    private void OnPrivacyChanged(object? sender, PrivacySensorState value) => OnUi(() =>
+    {
+        _privacy = value;
+        RaiseMany(nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse), nameof(ShowStatusExtras));
+    });
+
+    private void TriggerVolumeWarning(int volumePercent)
+    {
+        _lastWarnedVolumePercent = volumePercent;
+        _volumeWarningActive = true;
+        _volumeWarnCooldownUntil = DateTimeOffset.Now.AddSeconds(60);
+        _bannerSeq++;
+        RaiseMany(nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq));
+        _volumeWarningTimer.Stop();
+        _volumeWarningTimer.Start();
+    }
 
     private static void LaunchApp(string? pathOrUri)
     {
@@ -641,6 +726,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(IsAudioActive), nameof(ShowAudioStatusText), nameof(ShowDate),
             nameof(Vision), nameof(ShowVisionStatus), nameof(VisionStatusText), nameof(VisionDotBrush), nameof(VisionAlert),
             nameof(CameraPreview), nameof(ShowCameraPreview), nameof(ShowVisionButton),
+            nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse),
             nameof(ClockFontSize), nameof(DateFontSize), nameof(BatteryGlyphFontSize), nameof(BatteryTextFontSize),
             nameof(ChargingGlyphFontSize), nameof(ChargingTextFontSize), nameof(CompactChargingTextFontSize),
             nameof(MediaTitleFontSize), nameof(MediaArtistFontSize), nameof(VolumeFontSize), nameof(VisionTextFontSize),
@@ -665,7 +751,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(RamPercentValue), nameof(NetSparkline),
             nameof(ShowCountdown), nameof(CountdownText), nameof(ShowWorldClocks), nameof(WorldClocks),
             nameof(ShowStocks), nameof(Stocks), nameof(ShowNextMeeting), nameof(MeetingTitle), nameof(MeetingWhen), nameof(HasMeetingJoin),
-            nameof(ShowBatteryTime), nameof(BatteryTimeText), nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowNotification), nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
+            nameof(ShowBatteryTime), nameof(BatteryTimeText), nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowNotification), nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq), nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
             nameof(IslandCornerRadius), nameof(IslandInnerCornerRadius),
             nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(PinExpanded),
             nameof(MediaColumn), nameof(VolumeColumn), nameof(StatusColumn)
@@ -754,7 +840,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _stocksService.Changed -= OnStocksChanged;
         _calendarService.Changed -= OnMeetingChanged;
         _notificationService.Notified -= OnNotified;
+        _privacyService.Changed -= OnPrivacyChanged;
         _notificationTimer.Stop();
+        _volumeWarningTimer.Stop();
         if (_previewRetained) { _visionService.ReleasePreview(); _previewRetained = false; }
         _batteryService.Changed -= OnBatteryChanged;
         _clockService.Tick -= OnClockTick;
@@ -765,3 +853,5 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
 public sealed record WorldClock(string Label, string Time);
 public sealed record LaunchEntry(string Name, string Path, string Glyph);
+public sealed record OutputDeviceItem(string Id, string Name, bool IsCurrent);
+public sealed record StockTile(string Symbol, string PriceText, string ChangeText, bool Up, System.Windows.Media.PointCollection Spark);

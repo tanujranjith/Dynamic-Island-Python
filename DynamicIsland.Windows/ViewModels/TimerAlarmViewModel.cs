@@ -16,6 +16,7 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
     private string _alarmLabel = string.Empty;
     private string _amPm = "AM";
     private bool _use24Hour;
+    private AlarmRepeat _alarmRepeat = AlarmRepeat.Once;
 
     public TimerAlarmViewModel(TimerAlarmService service, bool use24Hour)
     {
@@ -83,6 +84,8 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
     public string AlarmLabel { get => _alarmLabel; set => SetProperty(ref _alarmLabel, value); }
     public string AmPm { get => _amPm; set => SetProperty(ref _amPm, value); }
     public bool Use24Hour { get => _use24Hour; set => SetProperty(ref _use24Hour, value); }
+    public Array RepeatOptions => Enum.GetValues<AlarmRepeat>();
+    public AlarmRepeat AlarmRepeat { get => _alarmRepeat; set => SetProperty(ref _alarmRepeat, value); }
     public string TimerRemaining => TimerAlarmService.FormatDuration(_service.TimerRemaining);
     public double TimerProgress => _service.TimerProgress * 100;
     public string TimerStateText => _service.State.Timer.Phase.ToString();
@@ -96,7 +99,8 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
     public string AlarmStateText => _service.State.Alarm.Phase switch
     {
         AlarmPhase.None => "No alarm set",
-        AlarmPhase.Scheduled => $"Scheduled for {TimerAlarmService.FormatAlarmTime(_service.State.Alarm)}",
+        AlarmPhase.Scheduled => $"Scheduled for {TimerAlarmService.FormatAlarmTime(_service.State.Alarm)}"
+            + (_service.State.Alarm.Repeat == AlarmRepeat.Once ? "" : $" · {TimerAlarmService.FormatRepeat(_service.State.Alarm.Repeat)}"),
         AlarmPhase.Snoozed => $"Snoozed until {_service.State.Alarm.SnoozeUntil:t}",
         AlarmPhase.Ringing => "Alarm ringing",
         _ => "Dismissed"
@@ -122,7 +126,7 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
             hour = Math.Clamp(hour, 1, 12) % 12;
             if (string.Equals(AmPm, "PM", StringComparison.OrdinalIgnoreCase)) hour += 12;
         }
-        _service.SetAlarm(hour, Math.Clamp(minute, 0, 59), Use24Hour, AlarmLabel);
+        _service.SetAlarm(hour, Math.Clamp(minute, 0, 59), Use24Hour, AlarmLabel, AlarmRepeat);
     }
 
     private void OnChanged(object? sender, EventArgs e)

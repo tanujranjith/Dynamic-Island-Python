@@ -111,10 +111,10 @@ public partial class IslandWindow : Window
             _position.ApplyWindowStyles(this, _viewModel.Settings, _viewModel.IsCompact);
             AnimatePill(animate: true);
         }
-        else if (e.PropertyName == nameof(IslandViewModel.NotificationSeq))
+        else if (e.PropertyName == nameof(IslandViewModel.BannerSeq))
         {
-            // NotificationSeq changes once per genuinely new notification (unlike ShowNotification, which
-            // routine refreshes re-raise), so the entrance plays exactly once and never restarts mid-display.
+            // BannerSeq increments once per new banner event (Windows notification or volume warning),
+            // so the entrance plays exactly once and never restarts mid-display.
             PlayNotificationIntro();
         }
     }
@@ -426,12 +426,19 @@ public partial class IslandWindow : Window
         }
     }
 
-    // Output-device row: opens Windows sound settings (interim "device picker" until an in-app selector ships).
+    // Output-device row: opens an in-island picker listing active output endpoints; click one to switch default.
     private void OutputDevice_Click(object sender, MouseButtonEventArgs e)
     {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:sound") { UseShellExecute = true }); }
-        catch { }
+        _viewModel.RefreshOutputDevices();
+        OutputDevicePopup.IsOpen = true;
         e.Handled = true;
+    }
+
+    private void OutputDeviceItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button { Tag: string id })
+            _viewModel.SelectOutputDeviceCommand.Execute(id);
+        OutputDevicePopup.IsOpen = false;
     }
 
     private void CollapseButton_Click(object sender, RoutedEventArgs e) => _viewModel.IsExpanded = false;

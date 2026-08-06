@@ -116,23 +116,50 @@ public sealed class TimerAlarmService : IDisposable
         SaveAndNotify();
     }
 
-    public void SetAlarm(int hour, int minute, bool use24Hour, string? label = null)
+    public void SetAlarm(int hour, int minute, bool use24Hour, string? label = null, AlarmRepeat repeat = AlarmRepeat.Once)
     {
         StopSound();
-        var now = DateTimeOffset.Now;
-        var target = new DateTimeOffset(now.Year, now.Month, now.Day,
-            Math.Clamp(hour, 0, 23), Math.Clamp(minute, 0, 59), 0, now.Offset);
-        if (target <= now) target = target.AddDays(1);
+        var h = Math.Clamp(hour, 0, 23);
+        var m = Math.Clamp(minute, 0, 59);
+        // Weekly anchors on the weekday of the first occurrence, so it repeats on that same day each week.
+        var firstDaily = NextOccurrence(h, m, AlarmRepeat.Daily, null, DateTimeOffset.Now);
+        int? anchor = repeat == AlarmRepeat.Weekly ? (int)firstDaily.DayOfWeek : null;
+        var target = NextOccurrence(h, m, repeat, anchor, DateTimeOffset.Now);
         State.Alarm = new AlarmState
         {
             Phase = AlarmPhase.Scheduled,
-            Hour = target.Hour,
-            Minute = target.Minute,
+            Hour = h,
+            Minute = m,
             Use24Hour = use24Hour,
             Label = label?.Trim() ?? string.Empty,
+            Repeat = repeat,
+            RepeatAnchorDayOfWeek = anchor,
             TargetAt = target
         };
         SaveAndNotify();
+    }
+
+    // Next date/time strictly after <paramref name="after"/> matching the repeat rule.
+    private static DateTimeOffset NextOccurrence(int hour, int minute, AlarmRepeat repeat, int? anchorDow, DateTimeOffset after)
+    {
+        var candidate = new DateTimeOffset(after.Year, after.Month, after.Day, hour, minute, 0, after.Offset);
+        while (candidate <= after
+               || (repeat == AlarmRepeat.Weekdays && candidate.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+               || (repeat == AlarmRepeat.Weekly && anchorDow is int dow && (int)candidate.DayOfWeek != dow))
+            candidate = candidate.AddDays(1);
+        return candidate;
+    }
+
+    // Advances a repeating alarm to its next occurrence; returns false for a one-shot alarm.
+    private bool RescheduleIfRepeating(AlarmState alarm, DateTimeOffset after)
+    {
+        if (alarm.Repeat == AlarmRepeat.Once) return false;
+        alarm.Phase = AlarmPhase.Scheduled;
+        alarm.RingStartedAt = null;
+        alarm.SnoozeUntil = null;
+        alarm.SnoozeCount = 0;
+        alarm.TargetAt = NextOccurrence(alarm.Hour, alarm.Minute, alarm.Repeat, alarm.RepeatAnchorDayOfWeek, after);
+        return true;
     }
 
     public void DeleteAlarm()
@@ -145,7 +172,8 @@ public sealed class TimerAlarmService : IDisposable
     public void DismissAlarm()
     {
         StopSound();
-        State.Alarm.Phase = AlarmPhase.Dismissed;
+        if (!RescheduleIfRepeating(State.Alarm, DateTimeOffset.Now))
+            State.Alarm.Phase = AlarmPhase.Dismissed;
         SaveAndNotify();
     }
 
@@ -196,8 +224,8 @@ public sealed class TimerAlarmService : IDisposable
         else if (alarm.Phase == AlarmPhase.Ringing && alarm.RingStartedAt is not null &&
                  now - alarm.RingStartedAt >= AlarmTimeout)
         {
-            alarm.Phase = AlarmPhase.Dismissed;
             StopSound();
+            if (!RescheduleIfRepeating(alarm, now)) alarm.Phase = AlarmPhase.Dismissed;
             dirty = true;
         }
 
@@ -255,10 +283,15 @@ public sealed class TimerAlarmService : IDisposable
             State.Timer.CompletionAcknowledged = true;
         }
         if (State.Alarm.Phase == AlarmPhase.Ringing)
-            State.Alarm.Phase = AlarmPhase.Dismissed;
+        {
+            if (!RescheduleIfRepeating(State.Alarm, now)) State.Alarm.Phase = AlarmPhase.Dismissed;
+        }
+        // A scheduled alarm whose time passed while the app was closed: reschedule if repeating, else drop.
         if (State.Alarm.Phase == AlarmPhase.Scheduled && State.Alarm.TargetAt is not null &&
             now - State.Alarm.TargetAt > AlarmTimeout)
-            State.Alarm.Phase = AlarmPhase.Dismissed;
+        {
+            if (!RescheduleIfRepeating(State.Alarm, now)) State.Alarm.Phase = AlarmPhase.Dismissed;
+        }
     }
 
     private void SaveAndNotify()
@@ -284,6 +317,14 @@ public sealed class TimerAlarmService : IDisposable
     public static string FormatDuration(TimeSpan value) => value.TotalHours >= 1
         ? $"{(int)value.TotalHours}:{value.Minutes:00}:{value.Seconds:00}"
         : $"{value.Minutes:00}:{value.Seconds:00}";
+
+    public static string FormatRepeat(AlarmRepeat repeat) => repeat switch
+    {
+        AlarmRepeat.Daily => "Daily",
+        AlarmRepeat.Weekdays => "Weekdays",
+        AlarmRepeat.Weekly => "Weekly",
+        _ => "Once"
+    };
 
     public static string FormatAlarmTime(AlarmState alarm)
     {

@@ -64,6 +64,11 @@ public sealed class SettingsViewModel : ObservableObject
         MoveModuleDownCommand = new RelayCommand<ModuleItem>(m => MoveModule(m, +1));
         SelectSectionCommand = new RelayCommand<string>(k => { if (k is not null) SelectedSectionKey = k; });
         ApplySkinCommand = new RelayCommand<string>(ApplySkin);
+        AddQuickLaunchCommand = new RelayCommand(AddQuickLaunch);
+        RemoveQuickLaunchCommand = new RelayCommand<LaunchListItem>(RemoveQuickLaunch);
+        BrowseQuickLaunchCommand = new RelayCommand<LaunchListItem>(BrowseQuickLaunch);
+        MoveQuickLaunchUpCommand = new RelayCommand<LaunchListItem>(i => MoveQuickLaunch(i, -1));
+        MoveQuickLaunchDownCommand = new RelayCommand<LaunchListItem>(i => MoveQuickLaunch(i, +1));
         _vision.FrameReady += OnVisionFrame;
         _vision.EnrollProgressChanged += OnEnrollProgress;
         _visionStatusLine = BuildVisionStatus();
@@ -259,6 +264,71 @@ public sealed class SettingsViewModel : ObservableObject
     // ===== Widgets / live activities (new) =====
     public bool ShowQuickLaunch { get => _settings.ShowQuickLaunch; set { Set(v => _settings.ShowQuickLaunch = v, value); _apply(); } }
     public string QuickLaunchItems { get => _settings.QuickLaunchItems; set { Set(v => _settings.QuickLaunchItems = v ?? "", value); _apply(); } }
+
+    // ===== Quick-launch list editor =====
+    public ObservableCollection<LaunchListItem> QuickLaunchList { get; } = [];
+    public ICommand AddQuickLaunchCommand { get; private set; } = null!;
+    public ICommand RemoveQuickLaunchCommand { get; private set; } = null!;
+    public ICommand BrowseQuickLaunchCommand { get; private set; } = null!;
+    public ICommand MoveQuickLaunchUpCommand { get; private set; } = null!;
+    public ICommand MoveQuickLaunchDownCommand { get; private set; } = null!;
+
+    private void RebuildQuickLaunch()
+    {
+        QuickLaunchList.Clear();
+        foreach (var line in (_settings.QuickLaunchItems ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split('|', 2);
+            var name = parts[0].Trim();
+            var path = parts.Length > 1 ? parts[1].Trim() : name;
+            QuickLaunchList.Add(new LaunchListItem(name, path, SyncQuickLaunch));
+        }
+    }
+
+    private void SyncQuickLaunch()
+    {
+        _settings.QuickLaunchItems = string.Join('\n', QuickLaunchList
+            .Where(i => !string.IsNullOrWhiteSpace(i.Path))
+            .Select(i => $"{(string.IsNullOrWhiteSpace(i.Name) ? System.IO.Path.GetFileNameWithoutExtension(i.Path) : i.Name)}|{i.Path}"));
+        RaisePropertyChanged(nameof(QuickLaunchItems));
+        _apply();
+    }
+
+    private void AddQuickLaunch()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        { Filter = "Apps and shortcuts (*.exe;*.lnk;*.bat;*.url)|*.exe;*.lnk;*.bat;*.url|All files (*.*)|*.*" };
+        if (dialog.ShowDialog() != true) return;
+        var name = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
+        QuickLaunchList.Add(new LaunchListItem(name, dialog.FileName, SyncQuickLaunch));
+        SyncQuickLaunch();
+    }
+
+    private void BrowseQuickLaunch(LaunchListItem? item)
+    {
+        if (item is null) return;
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        { Filter = "Apps and shortcuts (*.exe;*.lnk;*.bat;*.url)|*.exe;*.lnk;*.bat;*.url|All files (*.*)|*.*" };
+        if (dialog.ShowDialog() != true) return;
+        if (string.IsNullOrWhiteSpace(item.Name)) item.Name = System.IO.Path.GetFileNameWithoutExtension(dialog.FileName);
+        item.Path = dialog.FileName; // setter calls SyncQuickLaunch
+    }
+
+    private void RemoveQuickLaunch(LaunchListItem? item)
+    {
+        if (item is null || !QuickLaunchList.Remove(item)) return;
+        SyncQuickLaunch();
+    }
+
+    private void MoveQuickLaunch(LaunchListItem? item, int direction)
+    {
+        if (item is null) return;
+        var i = QuickLaunchList.IndexOf(item);
+        var j = i + direction;
+        if (i < 0 || j < 0 || j >= QuickLaunchList.Count) return;
+        QuickLaunchList.Move(i, j);
+        SyncQuickLaunch();
+    }
     public bool ShowCountdown { get => _settings.ShowCountdown; set { Set(v => _settings.ShowCountdown = v, value); _apply(); } }
     public string CountdownLabel { get => _settings.CountdownLabel; set { Set(v => _settings.CountdownLabel = v ?? "", value); _apply(); } }
     public string CountdownDate { get => _settings.CountdownDate; set { Set(v => _settings.CountdownDate = v ?? "", value); _apply(); } }
@@ -268,10 +338,18 @@ public sealed class SettingsViewModel : ObservableObject
     public string WorldClockZones { get => _settings.WorldClockZones; set { Set(v => _settings.WorldClockZones = v ?? "", value); _apply(); } }
     public bool ShowNextMeeting { get => _settings.ShowNextMeeting; set { Set(v => _settings.ShowNextMeeting = v, value); _apply(); } }
     public bool ShowNotifications { get => _settings.ShowNotifications; set { Set(v => _settings.ShowNotifications = v, value); _apply(); } }
+    public Array NotificationFilterOptions => Enum.GetValues<NotificationFilter>();
+    public NotificationFilter NotificationFilterMode { get => _settings.NotificationFilterMode; set { Set(v => _settings.NotificationFilterMode = v, value); _apply(); } }
+    public string NotificationAppFilter { get => _settings.NotificationAppFilter; set { Set(v => _settings.NotificationAppFilter = v ?? "", value); _apply(); } }
+    public bool ShowPrivacyIndicators { get => _settings.ShowPrivacyIndicators; set { Set(v => _settings.ShowPrivacyIndicators = v, value); _apply(); } }
     public bool ShowClipboard { get => _settings.ShowClipboard; set { Set(v => _settings.ShowClipboard = v, value); _apply(); } }
     public bool ShowBatteryTime { get => _settings.ShowBatteryTime; set { Set(v => _settings.ShowBatteryTime = v, value); _apply(); } }
     public bool LowBatteryWarning { get => _settings.LowBatteryWarning; set { Set(v => _settings.LowBatteryWarning = v, value); _apply(); } }
     public int LowBatteryThreshold { get => _settings.LowBatteryThreshold; set => SetSize(v => _settings.LowBatteryThreshold = v, value, 5, 50); }
+
+    // ===== Volume warning =====
+    public bool VolumeWarningEnabled { get => _settings.VolumeWarningEnabled; set { Set(v => _settings.VolumeWarningEnabled = v, value); _apply(); } }
+    public int VolumeWarningThreshold { get => _settings.VolumeWarningThreshold; set => SetSize(v => _settings.VolumeWarningThreshold = v, value, 10, 100); }
 
     // ===== Theme skins =====
     public string[] ThemeSkins { get; } = ["Default", "Minimal", "Frosted", "Cyberpunk", "Mono", "Sunset"];
@@ -328,6 +406,7 @@ public sealed class SettingsViewModel : ObservableObject
         try { foreach (var s in System.Windows.Forms.Screen.AllScreens) MonitorOptions.Add(s.DeviceName); } catch { }
 
         RebuildModuleOrder();
+        RebuildQuickLaunch();
         RefreshPresets();
         RebuildSections();
     }
@@ -462,6 +541,7 @@ public sealed class SettingsViewModel : ObservableObject
     private void RefreshAllAndApply()
     {
         RebuildModuleOrder();
+        RebuildQuickLaunch();
         RaisePropertyChanged(string.Empty);
         RefreshVisionStatus();
         _ = SaveAsync();
@@ -672,6 +752,8 @@ public sealed class SettingsViewModel : ObservableObject
         if (choice != System.Windows.MessageBoxResult.OK) return;
 
         _settings.ResetToDefaults();
+        RebuildModuleOrder();
+        RebuildQuickLaunch();
         RaisePropertyChanged(string.Empty); // refresh every bound control in the settings windows
         RefreshVisionStatus();
         _ = SaveAsync(); // persists + re-applies to the island (and syncs the startup registry)
@@ -694,3 +776,18 @@ public sealed class SettingsViewModel : ObservableObject
 
 public sealed record ModuleItem(string Key, string Name);
 public sealed record SettingsSection(string Key, string Name, string Glyph);
+
+public sealed class LaunchListItem : ObservableObject
+{
+    private readonly Action _changed;
+    private string _name;
+    private string _path;
+    public LaunchListItem(string name, string path, Action changed)
+    {
+        _name = name;
+        _path = path;
+        _changed = changed;
+    }
+    public string Name { get => _name; set { if (SetProperty(ref _name, value)) _changed(); } }
+    public string Path { get => _path; set { if (SetProperty(ref _path, value)) _changed(); } }
+}

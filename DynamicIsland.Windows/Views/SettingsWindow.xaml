@@ -455,6 +455,12 @@
                         <Border Style="{StaticResource Divider}" />
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Real audio spectrum" Style="{StaticResource RowTitle}" /><TextBlock Text="Live frequency bars from system audio." Style="{StaticResource RowDesc}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding RealAudioSpectrum}" /></Grid>
                     </StackPanel></Border>
+                    <TextBlock Text="VOLUME WARNING" Style="{StaticResource GroupHeader}" />
+                    <Border Style="{StaticResource SettingsCard}"><StackPanel>
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="High-volume warning" Style="{StaticResource RowTitle}" /><TextBlock Text="Show a notice in the island when volume exceeds the threshold." Style="{StaticResource RowDesc}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding VolumeWarningEnabled}" /></Grid>
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Warn at" Style="{StaticResource RowTitle}" /><StackPanel Grid.Column="1" Orientation="Horizontal"><Slider Style="{StaticResource SettingsSlider}" Minimum="10" Maximum="100" Value="{Binding VolumeWarningThreshold}" TickFrequency="5" IsSnapToTickEnabled="True" /><TextBlock Text="{Binding VolumeWarningThreshold, StringFormat={}{0}%}" Width="44" TextAlignment="Right" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{DynamicResource SettingsMutedBrush}" /></StackPanel></Grid>
+                    </StackPanel></Border>
                     <TextBlock Text="BATTERY" Style="{StaticResource GroupHeader}" />
                     <Border Style="{StaticResource SettingsCard}"><StackPanel>
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Time remaining" Style="{StaticResource RowTitle}" /><TextBlock Text="Show estimated battery time left on the island." Style="{StaticResource RowDesc}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowBatteryTime}" /></Grid>
@@ -507,12 +513,44 @@
                     <Border Style="{StaticResource SettingsCard}"><StackPanel>
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Quick-launch buttons" Style="{StaticResource RowTitle}" /><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowQuickLaunch}" /></Grid>
                         <Border Style="{StaticResource Divider}" />
-                        <TextBlock Text="One per line — Name|C:\Path\App.exe (or a URL)" Style="{StaticResource RowDesc}" Margin="0,2,0,6" />
-                        <TextBox Style="{StaticResource TextInput}" Width="Auto" Height="92" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" Text="{Binding QuickLaunchItems, UpdateSourceTrigger=LostFocus}" />
+                        <TextBlock Text="Buttons that appear on the expanded island. Add an app, rename it, or reorder." Style="{StaticResource RowDesc}" Margin="0,2,0,6" />
+                        <ItemsControl ItemsSource="{Binding QuickLaunchList}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Style="{StaticResource TextInput}" Text="{Binding Name, UpdateSourceTrigger=LostFocus}" ToolTip="Label" />
+                                        <TextBox Grid.Column="1" Style="{StaticResource TextInput}" Margin="8,0" Text="{Binding Path, UpdateSourceTrigger=LostFocus}" ToolTip="Path or URL" />
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                            <Button Content="&#xE838;" FontFamily="Segoe Fluent Icons" ToolTip="Browse…" Style="{StaticResource SettingsButton}" Background="{DynamicResource SettingsSubtleButtonBrush}" Foreground="{DynamicResource SettingsTextBrush}" Padding="9,6" Margin="0,0,4,0"
+                                                    Command="{Binding DataContext.BrowseQuickLaunchCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" />
+                                            <Button Content="&#xE70E;" FontFamily="Segoe Fluent Icons" ToolTip="Move up" Style="{StaticResource SettingsButton}" Background="{DynamicResource SettingsSubtleButtonBrush}" Foreground="{DynamicResource SettingsTextBrush}" Padding="9,6" Margin="0,0,4,0"
+                                                    Command="{Binding DataContext.MoveQuickLaunchUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" />
+                                            <Button Content="&#xE70D;" FontFamily="Segoe Fluent Icons" ToolTip="Move down" Style="{StaticResource SettingsButton}" Background="{DynamicResource SettingsSubtleButtonBrush}" Foreground="{DynamicResource SettingsTextBrush}" Padding="9,6" Margin="0,0,4,0"
+                                                    Command="{Binding DataContext.MoveQuickLaunchDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" />
+                                            <Button Content="&#xE74D;" FontFamily="Segoe Fluent Icons" ToolTip="Remove" Style="{StaticResource SettingsButton}" Background="#3A2630" Foreground="#FFB4B4" Padding="9,6"
+                                                    Command="{Binding DataContext.RemoveQuickLaunchCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="&#xE710;  Add app…" FontFamily="Segoe Fluent Icons" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                Style="{StaticResource SettingsButton}" Command="{Binding AddQuickLaunchCommand}" />
                     </StackPanel></Border>
                     <TextBlock Text="WINDOWS INTEGRATIONS (may require permission)" Style="{StaticResource GroupHeader}" />
                     <Border Style="{StaticResource SettingsCard}"><StackPanel>
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Notification mirroring" Style="{StaticResource RowTitle}" /><TextBlock Text="Show incoming Windows notifications in the island." Style="{StaticResource RowDesc}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowNotifications}" /></Grid>
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Filter apps" Style="{StaticResource RowTitle}" /><TextBlock Text="All apps, only listed apps (allowlist), or hide listed apps (blocklist)." Style="{StaticResource RowDesc}" /></StackPanel><ComboBox Grid.Column="1" Style="{StaticResource SettingsCombo}" MinWidth="130" ItemsSource="{Binding NotificationFilterOptions}" SelectedItem="{Binding NotificationFilterMode}" /></Grid>
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="App list" Style="{StaticResource RowTitle}" /><TextBlock Text="Comma-separated app names, e.g. Slack,Mail,Teams" Style="{StaticResource RowDesc}" /></StackPanel><TextBox Grid.Column="1" Style="{StaticResource TextInput}" Text="{Binding NotificationAppFilter, UpdateSourceTrigger=LostFocus}" /></Grid>
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Mic &amp; camera in-use dots" Style="{StaticResource RowTitle}" /><TextBlock Text="Show an indicator when an app is using your microphone or webcam." Style="{StaticResource RowDesc}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowPrivacyIndicators}" /></Grid>
                         <Border Style="{StaticResource Divider}" />
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Next meeting + Join" Style="{StaticResource RowTitle}" /><TextBlock Text="Your next calendar event with a one-click join link." Style="{StaticResource RowDesc}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowNextMeeting}" /></Grid>
                         <Border Style="{StaticResource Divider}" />

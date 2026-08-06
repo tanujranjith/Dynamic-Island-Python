@@ -1,6 +1,7 @@
 namespace DynamicIsland.Windows.Models;
 
 public enum ThemeMode { System, Light, Dark }
+public enum NotificationFilter { All, Allowlist, Blocklist }
 public enum IslandSize { Compact, Normal, Large }
 public enum AnimationIntensity { Reduced, Normal, Expressive }
 public enum PositionMode { TopCenter, TopLeft, Manual }
@@ -129,11 +130,21 @@ public sealed class AppSettings
     public bool ShowClipboard { get; set; }
     public bool ShowNotifications { get; set; }
     public bool ShowNextMeeting { get; set; }
+    // Notification mirroring filter: All shows every toast; Allowlist shows only listed apps; Blocklist hides them.
+    public NotificationFilter NotificationFilterMode { get; set; } = NotificationFilter.All;
+    public string NotificationAppFilter { get; set; } = ""; // comma-separated app display names (substring match)
+
+    // ===== Privacy sensors (mic/camera in-use indicator) =====
+    public bool ShowPrivacyIndicators { get; set; } = true;
 
     // ===== Battery warnings =====
     public bool ShowBatteryTime { get; set; }
     public bool LowBatteryWarning { get; set; } = true;
     public int LowBatteryThreshold { get; set; } = 15;
+
+    // ===== Volume warning =====
+    public bool VolumeWarningEnabled { get; set; } = true;
+    public int VolumeWarningThreshold { get; set; } = 60;
 
     // ===== Theme skin (last applied, for reference) =====
     public string ThemeSkin { get; set; } = "";

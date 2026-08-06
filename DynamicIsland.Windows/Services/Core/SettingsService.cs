@@ -99,6 +99,7 @@ public sealed class SettingsService(LoggingService log)
         if (string.IsNullOrWhiteSpace(settings.FontFamilyName)) settings.FontFamilyName = "Segoe UI Variable Text";
         if (string.IsNullOrWhiteSpace(settings.ExpandedOrder)) settings.ExpandedOrder = "media,volume,status";
         settings.LowBatteryThreshold = Math.Clamp(settings.LowBatteryThreshold, 5, 50);
+        settings.VolumeWarningThreshold = Math.Clamp(settings.VolumeWarningThreshold, 10, 100);
     }
 
     public string PresetsDir => Path.Combine(_directory, "presets");

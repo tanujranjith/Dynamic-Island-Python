@@ -383,6 +383,11 @@
                         <Ellipse Width="7" Height="7" Margin="8,0,0,0" VerticalAlignment="Center"
                                  Fill="{Binding VisionDotBrush}" ToolTip="{Binding VisionStatusText}"
                                  Visibility="{Binding ShowVisionStatus, Converter={StaticResource BoolToVisibility}}" />
+                        <!-- Mic / camera in-use dots (red = camera, amber = mic) -->
+                        <Ellipse Width="7" Height="7" Margin="8,0,0,0" VerticalAlignment="Center" Fill="#FF6B6B" ToolTip="Camera in use"
+                                 Visibility="{Binding ShowCameraInUse, Converter={StaticResource BoolToVisibility}}" />
+                        <Ellipse Width="7" Height="7" Margin="8,0,0,0" VerticalAlignment="Center" Fill="#FFB020" ToolTip="Microphone in use"
+                                 Visibility="{Binding ShowMicInUse, Converter={StaticResource BoolToVisibility}}" />
                     </StackPanel>
                 </Grid>
 
@@ -493,7 +498,7 @@
                                        FontFamily="{Binding UiFontFamily}" FontSize="10" Foreground="{Binding SecondaryTextBrush}" />
                         </Grid>
 
-                        <!-- Transport: 10s rewind · prev · play/pause · next · 10s forward -->
+                        <!-- Transport: 10s rewind · prev · play/pause · next · 30s forward -->
                         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,9,0,0">
                             <!-- 10s rewind: a counter-clockwise circular-arrow glyph (mirrored Refresh) with a
                                  "10" overlaid. Distinct from prev/next; disables + explains via tooltip when the
@@ -515,13 +520,13 @@
                                     Margin="8,0" AutomationProperties.Name="Play or pause" />
                             <Button Content="&#xE893;" Command="{Binding NextCommand}" Style="{StaticResource CircleButton}"
                                     Width="40" Height="40" FontSize="15" Margin="6,0" AutomationProperties.Name="Next track" />
-                            <!-- 10s forward: clockwise circular-arrow glyph (Refresh) with a "10" overlaid. -->
+                            <!-- 30s forward: clockwise circular-arrow glyph (Refresh) with a "30" overlaid. -->
                             <Button Command="{Binding SeekForwardCommand}" Style="{StaticResource SeekButton}"
-                                    ToolTip="{Binding SeekForwardTooltip}" AutomationProperties.Name="Forward 10 seconds">
+                                    ToolTip="{Binding SeekForwardTooltip}" AutomationProperties.Name="Forward 30 seconds">
                                 <Grid Width="24" Height="24">
                                     <TextBlock Text="&#xE72C;" FontFamily="Segoe Fluent Icons" FontSize="21"
                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    <TextBlock Text="10" FontFamily="{Binding UiFontFamily}" FontSize="7.5" FontWeight="SemiBold"
+                                    <TextBlock Text="30" FontFamily="{Binding UiFontFamily}" FontSize="7.5" FontWeight="SemiBold"
                                                HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,1,0,0" />
                                 </Grid>
                             </Button>
@@ -689,6 +694,32 @@
                                                FontFamily="{Binding UiFontFamily}" FontSize="11" Foreground="{Binding PrimaryTextBrush}" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe Fluent Icons" FontSize="11" VerticalAlignment="Center"
                                                Foreground="{Binding SecondaryTextBrush}" />
+                                    <Popup x:Name="OutputDevicePopup" StaysOpen="False" AllowsTransparency="True" Placement="Top"
+                                           PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Border}}" HorizontalOffset="0" VerticalOffset="-6">
+                                        <Border Background="{Binding GlassBrush}" BorderBrush="{Binding PanelBorderBrush}" BorderThickness="1"
+                                                CornerRadius="12" Padding="6" MinWidth="230">
+                                            <Border.Effect><DropShadowEffect BlurRadius="20" ShadowDepth="4" Opacity="0.45" /></Border.Effect>
+                                            <StackPanel>
+                                                <TextBlock Text="Output device" Margin="8,4,8,6" FontFamily="{Binding UiFontFamily}" FontSize="11"
+                                                           FontWeight="SemiBold" Foreground="{Binding SecondaryTextBrush}" />
+                                                <ItemsControl ItemsSource="{Binding OutputDevices}">
+                                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                                        <Button Click="OutputDeviceItem_Click" Tag="{Binding Id}" Cursor="Hand" HorizontalContentAlignment="Left"
+                                                                Background="Transparent" BorderThickness="0" Padding="8,7" HorizontalAlignment="Stretch">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                                <TextBlock Text="&#xE73E;" FontFamily="Segoe Fluent Icons" FontSize="12" VerticalAlignment="Center"
+                                                                           Foreground="{Binding DataContext.AccentTextBrush, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                           Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVisibility}}" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" FontFamily="{Binding DataContext.UiFontFamily, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                           FontSize="12" Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                            </Grid>
+                                                        </Button>
+                                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </Popup>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -789,6 +820,16 @@
                                 <Ellipse Width="7" Height="7" VerticalAlignment="Center" Fill="{Binding VisionDotBrush}" />
                                 <TextBlock Text="{Binding VisionStatusText}" Margin="6,0,0,0" FontSize="{Binding VisionTextFontSize}" Foreground="{Binding SecondaryTextBrush}" VerticalAlignment="Center" />
                             </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,12,0" VerticalAlignment="Center" ToolTip="Camera in use"
+                                        Visibility="{Binding ShowCameraInUse, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="&#xE722;" FontFamily="Segoe Fluent Icons" FontSize="12" Foreground="#FF6B6B" VerticalAlignment="Center" />
+                                <TextBlock Text="Camera" Margin="5,0,0,0" FontSize="10" Foreground="{Binding SecondaryTextBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,12,0" VerticalAlignment="Center" ToolTip="Microphone in use"
+                                        Visibility="{Binding ShowMicInUse, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="&#xE720;" FontFamily="Segoe Fluent Icons" FontSize="12" Foreground="#FFB020" VerticalAlignment="Center" />
+                                <TextBlock Text="Mic" Margin="5,0,0,0" FontSize="10" Foreground="{Binding SecondaryTextBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
                             <ItemsControl ItemsSource="{Binding Stocks}" Margin="0,0,6,0" VerticalAlignment="Center"
                                           Visibility="{Binding ShowStocks, Converter={StaticResource BoolToVisibility}}">
                                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -796,6 +837,12 @@
                                     <StackPanel Orientation="Horizontal" Margin="0,0,9,0">
                                         <TextBlock Text="{Binding Symbol}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,3,0"
                                                    Foreground="{Binding DataContext.SecondaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        <Polyline Points="{Binding Spark}" StrokeThickness="1.3" StrokeLineJoin="Round" Width="34" Height="12" VerticalAlignment="Center" Margin="0,0,4,0">
+                                            <Polyline.Style><Style TargetType="Polyline">
+                                                <Setter Property="Stroke" Value="#FF6B6B" />
+                                                <Style.Triggers><DataTrigger Binding="{Binding Up}" Value="True"><Setter Property="Stroke" Value="#43E08A" /></DataTrigger></Style.Triggers>
+                                            </Style></Polyline.Style>
+                                        </Polyline>
                                         <TextBlock Text="{Binding PriceText}" FontSize="10" VerticalAlignment="Center" Margin="0,0,3,0"
                                                    Foreground="{Binding DataContext.PrimaryTextBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                                         <TextBlock Text="{Binding ChangeText}" FontSize="9" VerticalAlignment="Center">
@@ -887,7 +934,7 @@
              NotifBlur (content blur-in) and NotifSweep (accent light sweep). -->
         <Grid x:Name="NotifBanner" VerticalAlignment="Top" HorizontalAlignment="Center" MaxWidth="520"
               Margin="0,8,0,0" IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5"
-              Visibility="{Binding ShowNotification, Converter={StaticResource BoolToVisibility}}">
+              Visibility="{Binding ShowBanner, Converter={StaticResource BoolToVisibility}}">
             <Grid.RenderTransform><ScaleTransform x:Name="NotifScale" ScaleX="1" ScaleY="1" /></Grid.RenderTransform>
             <Border x:Name="NotifCard" CornerRadius="14" Padding="14,8" ClipToBounds="True"
                     Background="#F21B222D" BorderBrush="{Binding PanelBorderBrush}" BorderThickness="1">
@@ -895,10 +942,10 @@
                 <Grid>
                     <StackPanel x:Name="NotifContent">
                         <StackPanel.Effect><BlurEffect x:Name="NotifBlur" Radius="0" /></StackPanel.Effect>
-                        <TextBlock Text="{Binding NotificationApp}" FontSize="9" FontWeight="SemiBold" Foreground="{Binding AccentTextBrush}" />
-                        <TextBlock Text="{Binding NotificationTitle}" FontSize="13" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding BannerApp}" FontSize="9" FontWeight="SemiBold" Foreground="{Binding AccentTextBrush}" />
+                        <TextBlock Text="{Binding BannerTitle}" FontSize="13" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" TextTrimming="CharacterEllipsis" />
                         <!-- Wraps to ~2 lines then ellipsises, instead of being cut off on one line. -->
-                        <TextBlock Text="{Binding NotificationBody}" FontSize="11" Foreground="{Binding SecondaryTextBrush}" Margin="0,1,0,0"
+                        <TextBlock Text="{Binding BannerBody}" FontSize="11" Foreground="{Binding SecondaryTextBrush}" Margin="0,1,0,0"
                                    TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="32" />
                     </StackPanel>
                     <Rectangle x:Name="NotifSweepRect" IsHitTestVisible="False" Opacity="0">

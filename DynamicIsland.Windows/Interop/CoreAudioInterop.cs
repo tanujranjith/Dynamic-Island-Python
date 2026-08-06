@@ -12,7 +12,7 @@ internal class MMDeviceEnumeratorComObject;
 [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceEnumerator
 {
-    int EnumAudioEndpoints(EDataFlow dataFlow, uint stateMask, out nint devices);
+    int EnumAudioEndpoints(EDataFlow dataFlow, uint stateMask, out IMMDeviceCollection devices);
     int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice endpoint);
     int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
     int RegisterEndpointNotificationCallback(nint callback);
@@ -24,10 +24,62 @@ internal interface IMMDevice
 {
     int Activate(ref Guid interfaceId, uint classContext, nint activationParams,
         [MarshalAs(UnmanagedType.IUnknown)] out object interfacePointer);
-    int OpenPropertyStore(uint storageAccess, out nint properties);
+    int OpenPropertyStore(uint storageAccess, out IPropertyStore properties);
     int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
     int GetState(out uint state);
 }
+
+[ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDeviceCollection
+{
+    int GetCount(out int count);
+    int Item(int index, out IMMDevice device);
+}
+
+[ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPropertyStore
+{
+    int GetCount(out int count);
+    int GetAt(int index, out PropertyKey key);
+    int GetValue(ref PropertyKey key, out PropVariant value);
+    int SetValue(ref PropertyKey key, ref PropVariant value);
+    int Commit();
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct PropertyKey
+{
+    public Guid FormatId;
+    public int PropertyId;
+}
+
+[StructLayout(LayoutKind.Explicit)]
+internal struct PropVariant
+{
+    [FieldOffset(0)] public ushort VarType;
+    [FieldOffset(8)] public nint PointerValue;
+}
+
+// Undocumented but stable audio-endpoint policy interface (used to switch the default output device).
+[ComImport, Guid("F8679F50-850A-41CF-9C72-430F290290C8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPolicyConfig
+{
+    int GetMixFormat(nint a, nint b);
+    int GetDeviceFormat(nint a, int b, nint c);
+    int ResetDeviceFormat(nint a);
+    int SetDeviceFormat(nint a, nint b, nint c);
+    int GetProcessingPeriod(nint a, int b, nint c, nint d);
+    int SetProcessingPeriod(nint a, nint b);
+    int GetShareMode(nint a, nint b);
+    int SetShareMode(nint a, nint b);
+    int GetPropertyValue(nint a, nint b, nint c);
+    int SetPropertyValue(nint a, nint b, nint c);
+    int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string deviceId, ERole role);
+    int SetEndpointVisibility(nint a, int b);
+}
+
+[ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")]
+internal class CPolicyConfigClient;
 
 [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioEndpointVolume
@@ -178,5 +230,91 @@ internal static class CoreAudioFactory
         {
             try { Marshal.ReleaseComObject(value); } catch { }
         }
+    }
+
+    private const uint DeviceStateActive = 0x1;
+    private const uint StgmRead = 0x0;
+    // PKEY_Device_FriendlyName — the user-visible endpoint name (e.g. "Speakers (Realtek)").
+    private static PropertyKey FriendlyNameKey => new()
+    { FormatId = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), PropertyId = 14 };
+
+    [DllImport("ole32.dll")]
+    private static extern int PropVariantClear(ref PropVariant pvar);
+
+    /// <summary>Active render (output) endpoints as (device id, friendly name) pairs.</summary>
+    public static IReadOnlyList<(string Id, string Name)> GetRenderEndpoints()
+    {
+        var result = new List<(string, string)>();
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDeviceCollection? collection = null;
+        try
+        {
+            enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+            if (enumerator.EnumAudioEndpoints(EDataFlow.Render, DeviceStateActive, out collection) < 0) return result;
+            collection.GetCount(out var count);
+            for (var i = 0; i < count; i++)
+            {
+                IMMDevice? device = null;
+                try
+                {
+                    if (collection.Item(i, out device) < 0) continue;
+                    device.GetId(out var id);
+                    result.Add((id, ReadFriendlyName(device) ?? id));
+                }
+                catch { }
+                finally { Release(device); }
+            }
+        }
+        catch { }
+        finally { Release(collection); Release(enumerator); }
+        return result;
+    }
+
+    /// <summary>Friendly name of the current default multimedia render endpoint (empty if unavailable).</summary>
+    public static string GetDefaultRenderName()
+    {
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDevice? device = null;
+        try
+        {
+            enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+            if (enumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out device) < 0) return "";
+            return ReadFriendlyName(device) ?? "";
+        }
+        catch { return ""; }
+        finally { Release(device); Release(enumerator); }
+    }
+
+    /// <summary>Makes the given endpoint the default for all three roles.</summary>
+    public static void SetDefaultRenderDevice(string deviceId)
+    {
+        IPolicyConfig? config = null;
+        try
+        {
+            config = (IPolicyConfig)new CPolicyConfigClient();
+            config.SetDefaultEndpoint(deviceId, ERole.Console);
+            config.SetDefaultEndpoint(deviceId, ERole.Multimedia);
+            config.SetDefaultEndpoint(deviceId, ERole.Communications);
+        }
+        finally { Release(config); }
+    }
+
+    /// <summary>Friendly name for an already-activated endpoint (empty if unavailable).</summary>
+    public static string FriendlyNameOf(object device) =>
+        device is IMMDevice d ? ReadFriendlyName(d) ?? "" : "";
+
+    private static string? ReadFriendlyName(IMMDevice device)
+    {
+        IPropertyStore? store = null;
+        try
+        {
+            if (device.OpenPropertyStore(StgmRead, out store) < 0) return null;
+            var key = FriendlyNameKey;
+            if (store.GetValue(ref key, out var value) < 0) return null;
+            try { return value.PointerValue != nint.Zero ? Marshal.PtrToStringUni(value.PointerValue) : null; }
+            finally { PropVariantClear(ref value); }
+        }
+        catch { return null; }
+        finally { Release(store); }
     }
 }

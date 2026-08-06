@@ -29,6 +29,7 @@ public partial class App : System.Windows.Application
     private StocksService? _stocks;
     private CalendarService? _calendar;
     private NotificationListenerService? _notifications;
+    private PrivacySensorService? _privacy;
     private ClipboardService? _clipboard;
     private WindowPositionService? _position;
     private IslandViewModel? _islandViewModel;
@@ -89,13 +90,14 @@ public partial class App : System.Windows.Application
         _stocks = new StocksService(_log);
         _calendar = new CalendarService(_log);
         _notifications = new NotificationListenerService(_log);
+        _privacy = new PrivacySensorService(_log);
         _clipboard = new ClipboardService(_log);
         _vision.Changed += (_, state) => Dispatcher.BeginInvoke(() => HandleVisionAutomations(state));
         _battery.LowBattery += (_, pct) => Dispatcher.BeginInvoke(() =>
             _tray?.ShowNotification("Battery low", $"{pct}% remaining — plug in soon."));
         _position = new WindowPositionService();
         _islandViewModel = new IslandViewModel(_settings, _media, _audio, _battery, _clock, _timerAlarm, _theme,
-            _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications);
+            _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy);
         _islandWindow = new IslandWindow(_islandViewModel, _position, _settingsService);
         _islandWindow.OpenSettingsRequested += (_, _) => ShowSettings();
         _islandWindow.OpenTimerRequested += (_, _) => ShowTimerAlarm();
@@ -119,6 +121,7 @@ public partial class App : System.Windows.Application
         _battery.Start();
         _audio.Start();
         _timerAlarm.Start();
+        _privacy.Start();
         ApplyVisionSettings();
         _weather.Start();
         _stocks.Start();
@@ -415,6 +418,7 @@ public partial class App : System.Windows.Application
         _stocks?.Dispose();
         _calendar?.Dispose();
         _notifications?.Dispose();
+        _privacy?.Dispose();
         _media?.Dispose();
         _audio?.Dispose();
         _battery?.Dispose();

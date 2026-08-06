@@ -47,6 +47,20 @@ public sealed class AudioSessionService(LoggingService log) : IDisposable
         finally { CoreAudioFactory.Release(endpoint); CoreAudioFactory.Release(device); }
     }
 
+    /// <summary>Active output endpoints as (id, name) pairs, for the in-island device picker.</summary>
+    public IReadOnlyList<(string Id, string Name)> GetOutputDevices()
+    {
+        try { return CoreAudioFactory.GetRenderEndpoints(); }
+        catch (Exception ex) { log.Debug($"Enumerating output devices failed: {ex.Message}"); return []; }
+    }
+
+    /// <summary>Switches the system default output device to the given endpoint id.</summary>
+    public void SetDefaultOutputDevice(string deviceId)
+    {
+        try { CoreAudioFactory.SetDefaultRenderDevice(deviceId); }
+        catch (Exception ex) { log.Error("Unable to switch output device", ex); }
+    }
+
     private void PollLoop()
     {
         while (!_shutdown.IsCancellationRequested)
@@ -110,7 +124,7 @@ public sealed class AudioSessionService(LoggingService log) : IDisposable
                 ActiveAudioOutput = !systemMuted && (endpointPeak >= AudibleThreshold || audible > 0),
                 ActiveSessionCount = active,
                 AudibleSessionCount = audible,
-                OutputDeviceName = "Default output"
+                OutputDeviceName = CoreAudioFactory.FriendlyNameOf(endpointDevice)
             };
         }
         catch (COMException ex)
