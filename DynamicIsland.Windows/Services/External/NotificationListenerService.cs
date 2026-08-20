@@ -4,7 +4,7 @@ using Windows.UI.Notifications.Management;
 
 namespace DynamicIsland.Windows.Services;
 
-public sealed record NotificationInfo(string App, string Title, string Body);
+public sealed record NotificationInfo(string App, string Title, string Body, uint? Id = null, DateTimeOffset? CreatedAt = null);
 
 /// <summary>
 /// Mirrors incoming Windows toast notifications using UserNotificationListener. Requires user consent and
@@ -74,7 +74,7 @@ public sealed class NotificationListenerService(LoggingService log) : IDisposabl
             var text = binding.GetTextElements();
             var title = text.Count > 0 ? text[0].Text : app;
             var body = string.Join("  ", text.Skip(1).Select(t => t.Text));
-            return new NotificationInfo(app, title, body);
+            return new NotificationInfo(app, title, body, n.Id, DateTimeOffset.Now);
         }
         catch { return null; }
     }

@@ -303,6 +303,16 @@ internal static class CoreAudioFactory
     public static string FriendlyNameOf(object device) =>
         device is IMMDevice d ? ReadFriendlyName(d) ?? "" : "";
 
+    public static string IdOf(object device)
+    {
+        try
+        {
+            if (device is IMMDevice d && d.GetId(out var id) >= 0) return id;
+        }
+        catch { }
+        return "";
+    }
+
     private static string? ReadFriendlyName(IMMDevice device)
     {
         IPropertyStore? store = null;

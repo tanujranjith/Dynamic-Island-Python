@@ -6,6 +6,7 @@
     <Application.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <inf:RingProgressConverter x:Key="RingProgress" />
+        <inf:PercentageWidthConverter x:Key="PercentageWidth" />
         <inf:DoubleToCornerRadiusConverter x:Key="DoubleToCorner" />
         <inf:StringEqualsToVisibilityConverter x:Key="SectionVisibility" />
         <inf:StringEqualsToBoolConverter x:Key="SectionSelected" />
@@ -157,12 +158,12 @@
         </Style>
 
         <Style x:Key="SettingsCard" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource SettingsCardBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource SettingsCardBorderBrush}" />
+            <Setter Property="Background" Value="#14171C" />
+            <Setter Property="BorderBrush" Value="#2B3038" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="12" />
-            <Setter Property="Padding" Value="18" />
-            <Setter Property="Margin" Value="0,0,0,14" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="20" />
+            <Setter Property="Margin" Value="0,0,0,18" />
         </Style>
     </Application.Resources>
 </Application>

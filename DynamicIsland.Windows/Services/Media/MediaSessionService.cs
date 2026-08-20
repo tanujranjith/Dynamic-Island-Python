@@ -15,6 +15,13 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
     private string _lastIdentity = string.Empty;
     private string[] _availableApps = [];
     private byte[]? _artwork;
+    private DateTimeOffset _artworkRetryUntil = DateTimeOffset.MinValue;
+    private DateTimeOffset _nextArtworkRetry = DateTimeOffset.MinValue;
+
+    // Browser media sessions can publish new metadata before their thumbnail changes.
+    // Retry briefly after a track transition so the previous/video thumbnail is not cached.
+    private static readonly TimeSpan ArtworkRetryWindow = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ArtworkRetryInterval = TimeSpan.FromMilliseconds(500);
 
     public event EventHandler<MediaInfo>? Changed;
     public event EventHandler<IReadOnlyList<string>>? AvailableAppsChanged;
@@ -183,7 +190,7 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
                 var timeline = session.GetTimelineProperties();
                 var id = session.SourceAppUserModelId ?? string.Empty;
                 var state = MapPlayback(playback.PlaybackStatus);
-                var identity = $"{id}|{properties.Title}|{properties.Artist}|{state}";
+                var identity = $"{id}|{properties.Title}|{properties.Artist}|{properties.AlbumTitle}|{state}";
                 if (state == MediaPlaybackState.Playing || identity != _lastIdentity)
                     _recentActivity[id] = DateTimeOffset.Now;
                 var score = Score(session, current, id, state, properties.Title, properties.Artist);
@@ -203,16 +210,31 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
             _selectedSession = null;
             _lastIdentity = string.Empty;
             _artwork = null;
+            _artworkRetryUntil = DateTimeOffset.MinValue;
+            _nextArtworkRetry = DateTimeOffset.MinValue;
             Publish(MediaInfo.Empty);
             return false;
         }
 
         _selectedSession = best.Session;
-        var newIdentity = $"{best.AppId}|{best.Properties.Title}|{best.Properties.Artist}";
-        if (!string.Equals(newIdentity, _lastIdentity, StringComparison.Ordinal))
+        var newIdentity = $"{best.AppId}|{best.Properties.Title}|{best.Properties.Artist}|{best.Properties.AlbumTitle}";
+        var now = DateTimeOffset.Now;
+        var identityChanged = !string.Equals(newIdentity, _lastIdentity, StringComparison.Ordinal);
+        if (identityChanged)
         {
             _lastIdentity = newIdentity;
-            _artwork = await ReadArtworkAsync(best.Properties.Thumbnail);
+            _artworkRetryUntil = now + ArtworkRetryWindow;
+            _nextArtworkRetry = DateTimeOffset.MinValue;
+        }
+
+        // Do not trust the first thumbnail during a track transition. Byte comparison keeps
+        // unchanged thumbnails from causing a presentation update every polling interval.
+        if (identityChanged || (now < _artworkRetryUntil && now >= _nextArtworkRetry))
+        {
+            var refreshedArtwork = await ReadArtworkAsync(best.Properties.Thumbnail);
+            if (!ArtworkBytesEqual(_artwork, refreshedArtwork))
+                _artwork = refreshedArtwork;
+            _nextArtworkRetry = now + ArtworkRetryInterval;
         }
 
         var controls = best.Playback.Controls;
@@ -306,6 +328,13 @@ public sealed class MediaSessionService(LoggingService log) : IDisposable
             return data;
         }
         catch { return null; }
+    }
+
+    private static bool ArtworkBytesEqual(byte[]? left, byte[]? right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if (left is null || right is null || left.Length != right.Length) return false;
+        return left.AsSpan().SequenceEqual(right);
     }
 
     private static string FriendlyAppName(string appId)

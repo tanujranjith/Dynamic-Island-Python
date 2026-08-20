@@ -59,11 +59,11 @@ public sealed class SettingsViewModel : ObservableObject
         SavePresetCommand = new RelayCommand(() => _ = SavePresetAsync());
         ApplyPresetCommand = new RelayCommand(() => _ = ApplyPresetAsync());
         DeletePresetCommand = new RelayCommand(DeletePreset);
+        ApplyIslandPresetCommand = new RelayCommand<string>(ApplyIslandPreset);
         PickAccentCommand = new RelayCommand<string>(hex => { if (hex is not null) AccentColorHex = hex; });
         MoveModuleUpCommand = new RelayCommand<ModuleItem>(m => MoveModule(m, -1));
         MoveModuleDownCommand = new RelayCommand<ModuleItem>(m => MoveModule(m, +1));
         SelectSectionCommand = new RelayCommand<string>(k => { if (k is not null) SelectedSectionKey = k; });
-        ApplySkinCommand = new RelayCommand<string>(ApplySkin);
         AddQuickLaunchCommand = new RelayCommand(AddQuickLaunch);
         RemoveQuickLaunchCommand = new RelayCommand<LaunchListItem>(RemoveQuickLaunch);
         BrowseQuickLaunchCommand = new RelayCommand<LaunchListItem>(BrowseQuickLaunch);
@@ -124,6 +124,7 @@ public sealed class SettingsViewModel : ObservableObject
     public ObservableCollection<string> AvailableMediaApps { get; } = ["Automatic"];
     public Array ThemeOptions => Enum.GetValues<ThemeMode>();
     public Array SizeOptions => Enum.GetValues<IslandSize>();
+    public Array VisualModeOptions => Enum.GetValues<IslandVisualMode>();
     public Array AnimationOptions => Enum.GetValues<AnimationIntensity>();
     public Array PositionOptions => Enum.GetValues<PositionMode>();
 
@@ -147,30 +148,58 @@ public sealed class SettingsViewModel : ObservableObject
     public int AlbumCornerRadius
     {
         get => _settings.AlbumCornerRadius;
-        set { _settings.AlbumCornerRadius = Math.Clamp(value, 0, 50); RaisePropertyChanged(); _apply(); }
+        set { _settings.AlbumCornerRadius = Math.Clamp(value, 0, 30); RaisePropertyChanged(); _apply(); }
     }
     public bool ShowMediaProgressRing { get => _settings.ShowMediaProgressRing; set { Set(v => _settings.ShowMediaProgressRing = v, value); _apply(); } }
     public bool ShowSongTimeRemaining { get => _settings.ShowSongTimeRemaining; set { Set(v => _settings.ShowSongTimeRemaining = v, value); _apply(); } }
     public bool ShowTimerRing { get => _settings.ShowTimerRing; set { Set(v => _settings.ShowTimerRing = v, value); _apply(); } }
-    public bool LiquidGlass { get => _settings.LiquidGlass; set { Set(v => _settings.LiquidGlass = v, value); _apply(); } }
-    // Exposed as transparency (0 = opaque, higher = more see-through) to match how users think about it.
-    public int GlassTransparency
-    {
-        get => 100 - _settings.GlassOpacity;
-        set { _settings.GlassOpacity = 100 - Math.Clamp(value, 0, 80); RaisePropertyChanged(); _apply(); }
-    }
     public bool ShowVolume { get => _settings.ShowVolume; set => Set(v => _settings.ShowVolume = v, value); }
     public bool ShowBattery { get => _settings.ShowBattery; set => Set(v => _settings.ShowBattery = v, value); }
     public bool ShowClock { get => _settings.ShowClock; set => Set(v => _settings.ShowClock = v, value); }
     public bool ShowDate { get => _settings.ShowDate; set => Set(v => _settings.ShowDate = v, value); }
     public bool ShowTimerAlarm { get => _settings.ShowTimerAlarm; set => Set(v => _settings.ShowTimerAlarm = v, value); }
+    public bool FocusModeEnabled { get => _settings.FocusModeEnabled; set { Set(v => _settings.FocusModeEnabled = v, value); RaisePropertyChanged(nameof(FocusModeLabel)); _apply(); } }
+    public string FocusModeLabel => FocusModeEnabled ? "Focus mode" : "All widgets";
+    public bool NotificationHistoryEnabled { get => _settings.NotificationHistoryEnabled; set { Set(v => _settings.NotificationHistoryEnabled = v, value); _apply(); } }
     public bool Use24HourClock { get => _settings.Use24HourClock; set => Set(v => _settings.Use24HourClock = v, value); }
     public bool ShowSeconds { get => _settings.ShowSeconds; set => Set(v => _settings.ShowSeconds = v, value); }
     public bool DebugOverlay { get => _settings.DebugOverlay; set => Set(v => _settings.DebugOverlay = v, value); }
     public bool DebugLogging { get => _settings.DebugLogging; set => Set(v => _settings.DebugLogging = v, value); }
     public bool ShowInAltTab { get => _settings.ShowInAltTab; set => Set(v => _settings.ShowInAltTab = v, value); }
     public ThemeMode Theme { get => _settings.Theme; set => Set(v => _settings.Theme = v, value); }
-    public IslandSize IslandSize { get => _settings.IslandSize; set => Set(v => _settings.IslandSize = v, value); }
+    public IslandVisualMode IslandVisualMode { get => _settings.IslandVisualMode; set => Set(v => _settings.IslandVisualMode = v, value); }
+    public IslandSize IslandSize
+    {
+        get => _settings.IslandSize;
+        set
+        {
+            _settings.IslandSize = value;
+            var (width, height) = value switch
+            {
+                IslandSize.Compact => (210, 54),
+                IslandSize.Large => (260, 70),
+                _ => (230, 62)
+            };
+            _settings.IslandWidth = width;
+            _settings.IslandHeight = height;
+            _settings.AutoGrowPill = false;
+            RaisePropertyChanged();
+            RaisePropertyChanged(nameof(IslandWidth));
+            RaisePropertyChanged(nameof(IslandHeight));
+            RaisePropertyChanged(nameof(AutoGrowPill));
+            _apply();
+        }
+    }
+    public int IslandWidth
+    {
+        get => Math.Clamp(_settings.IslandWidth, 190, 360);
+        set { _settings.IslandWidth = Math.Clamp(value, 190, 360); _settings.AutoGrowPill = false; RaisePropertyChanged(); RaisePropertyChanged(nameof(AutoGrowPill)); _apply(); }
+    }
+    public int IslandHeight
+    {
+        get => Math.Clamp(_settings.IslandHeight, 50, 90);
+        set { _settings.IslandHeight = Math.Clamp(value, 50, 90); _settings.AutoGrowPill = false; RaisePropertyChanged(); RaisePropertyChanged(nameof(AutoGrowPill)); _apply(); }
+    }
     public int IslandCornerRadius
     {
         get => _settings.IslandCornerRadius;
@@ -227,11 +256,6 @@ public sealed class SettingsViewModel : ObservableObject
     {
         get => _settings.TextColorHex;
         set { if (string.IsNullOrWhiteSpace(value) || IsHex(value)) { _settings.TextColorHex = value ?? ""; RaisePropertyChanged(); _apply(); } }
-    }
-    public string GlassColorHex
-    {
-        get => _settings.GlassColorHex;
-        set { if (string.IsNullOrWhiteSpace(value) || IsHex(value)) { _settings.GlassColorHex = value ?? ""; RaisePropertyChanged(); _apply(); } }
     }
     public string FontFamilyName { get => _settings.FontFamilyName; set { Set(v => _settings.FontFamilyName = v, value); _apply(); } }
     public ObservableCollection<string> FontOptions { get; } = [];
@@ -332,6 +356,14 @@ public sealed class SettingsViewModel : ObservableObject
     public bool ShowCountdown { get => _settings.ShowCountdown; set { Set(v => _settings.ShowCountdown = v, value); _apply(); } }
     public string CountdownLabel { get => _settings.CountdownLabel; set { Set(v => _settings.CountdownLabel = v ?? "", value); _apply(); } }
     public string CountdownDate { get => _settings.CountdownDate; set { Set(v => _settings.CountdownDate = v ?? "", value); _apply(); } }
+
+    // ===== Quotes =====
+    public Array QuotePlacementOptions => Enum.GetValues<QuotePlacement>();
+    public Array QuoteRotationOptions => Enum.GetValues<QuoteRotation>();
+    public QuotePlacement QuotePlacement { get => _settings.QuotePlacement; set { Set(v => _settings.QuotePlacement = v, value); _apply(); } }
+    public QuoteRotation QuoteRotation { get => _settings.QuoteRotation; set { Set(v => _settings.QuoteRotation = v, value); _apply(); } }
+    public string QuotesText { get => _settings.QuotesText; set { Set(v => _settings.QuotesText = v ?? "", value); _apply(); } }
+    public int QuoteSize { get => _settings.QuoteSize; set => SetSize(v => _settings.QuoteSize = v, value, 60, 160); }
     public bool ShowStocks { get => _settings.ShowStocks; set { Set(v => _settings.ShowStocks = v, value); _apply(); } }
     public string StockSymbols { get => _settings.StockSymbols; set { Set(v => _settings.StockSymbols = v ?? "", value); _apply(); } }
     public bool ShowWorldClocks { get => _settings.ShowWorldClocks; set { Set(v => _settings.ShowWorldClocks = v, value); _apply(); } }
@@ -351,10 +383,6 @@ public sealed class SettingsViewModel : ObservableObject
     public bool VolumeWarningEnabled { get => _settings.VolumeWarningEnabled; set { Set(v => _settings.VolumeWarningEnabled = v, value); _apply(); } }
     public int VolumeWarningThreshold { get => _settings.VolumeWarningThreshold; set => SetSize(v => _settings.VolumeWarningThreshold = v, value, 10, 100); }
 
-    // ===== Theme skins =====
-    public string[] ThemeSkins { get; } = ["Default", "Minimal", "Frosted", "Cyberpunk", "Mono", "Sunset"];
-    public ICommand ApplySkinCommand { get; private set; } = null!;
-
     // ===== Camera automations =====
     public bool AutoLockOnUnknown { get => _settings.AutoLockOnUnknown; set { Set(v => _settings.AutoLockOnUnknown = v, value); _apply(); } }
     public int AutoLockDelaySeconds { get => _settings.AutoLockDelaySeconds; set => SetSize(v => _settings.AutoLockDelaySeconds = v, value, 2, 60); }
@@ -373,7 +401,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     // ===== Sidebar navigation + search =====
     public ObservableCollection<SettingsSection> Sections { get; } = [];
-    private string _selectedSectionKey = "general";
+    private string _selectedSectionKey = "content";
     public string SelectedSectionKey { get => _selectedSectionKey; set => SetProperty(ref _selectedSectionKey, value); }
     private string _searchText = "";
     public string SearchText { get => _searchText; set { if (SetProperty(ref _searchText, value)) RebuildSections(); } }
@@ -383,6 +411,7 @@ public sealed class SettingsViewModel : ObservableObject
     public ICommand SavePresetCommand { get; } = null!;
     public ICommand ApplyPresetCommand { get; } = null!;
     public ICommand DeletePresetCommand { get; } = null!;
+    public ICommand ApplyIslandPresetCommand { get; } = null!;
     public ICommand PickAccentCommand { get; } = null!;
     public ICommand MoveModuleUpCommand { get; } = null!;
     public ICommand MoveModuleDownCommand { get; } = null!;
@@ -440,16 +469,11 @@ public sealed class SettingsViewModel : ObservableObject
     {
         var all = new[]
         {
-            new SettingsSection("general", "General", Glyph(0xE713)),
+            new SettingsSection("content", "Island Content", Glyph(0xE713)),
             new SettingsSection("appearance", "Appearance", Glyph(0xE790)),
-            new SettingsSection("sizes", "Text & Sizes", Glyph(0xE8E9)),
-            new SettingsSection("layout", "Layout & Position", Glyph(0xE809)),
-            new SettingsSection("media", "Media", Glyph(0xE768)),
+            new SettingsSection("position", "Position", Glyph(0xE809)),
             new SettingsSection("activities", "Live Activities", Glyph(0xE753)),
-            new SettingsSection("widgets", "Widgets", Glyph(0xE8A9)),
-            new SettingsSection("camera", "Camera", Glyph(0xE722)),
             new SettingsSection("advanced", "Advanced", Glyph(0xE9F5)),
-            new SettingsSection("about", "About", Glyph(0xE946)),
         };
         var q = _searchText?.Trim() ?? "";
         Sections.Clear();
@@ -493,6 +517,29 @@ public sealed class SettingsViewModel : ObservableObject
         RefreshPresets();
     }
 
+    private void ApplyIslandPreset(string? preset)
+    {
+        var (size, width, height, radius) = preset switch
+        {
+            "Minimal" => (IslandSize.Compact, 210, 54, 20),
+            "Roomy" => (IslandSize.Large, 260, 70, 26),
+            _ => (IslandSize.Normal, 230, 62, 22)
+        };
+        _settings.IslandSize = size;
+        _settings.IslandWidth = width;
+        _settings.IslandHeight = height;
+        _settings.IslandCornerRadius = radius;
+        _settings.AutoGrowPill = false;
+        RaisePropertyChanged(nameof(IslandSize));
+        RaisePropertyChanged(nameof(IslandWidth));
+        RaisePropertyChanged(nameof(IslandHeight));
+        RaisePropertyChanged(nameof(IslandCornerRadius));
+        RaisePropertyChanged(nameof(AutoGrowPill));
+        RaisePropertyChanged(nameof(PreviewExpandedCorner));
+        RaisePropertyChanged(nameof(PreviewMiniCorner));
+        _apply();
+    }
+
     private void Export()
     {
         var dialog = new Microsoft.Win32.SaveFileDialog
@@ -508,34 +555,6 @@ public sealed class SettingsViewModel : ObservableObject
         if (loaded is null) return;
         _settings.CopyFrom(loaded);
         RefreshAllAndApply();
-    }
-
-    private void ApplySkin(string? name)
-    {
-        switch (name)
-        {
-            case "Minimal": SetSkin(true, "#8E8E93", "", "", false, 70, "Segoe UI Variable Text"); break;
-            case "Frosted": SetSkin(true, "#64D2FF", "", "#3A4A66", true, 42, "Segoe UI Variable Text"); break;
-            case "Cyberpunk": SetSkin(true, "#FF2D95", "#E6FBFF", "#1A0A2E", true, 72, "Consolas"); break;
-            case "Mono": SetSkin(true, "#FFFFFF", "#FFFFFF", "#101014", false, 82, "Segoe UI"); break;
-            case "Sunset": SetSkin(true, "#FF9F0A", "#FFF1E6", "#2A1622", true, 60, "Georgia"); break;
-            default: _settings.UseCustomColors = false; break; // Default = follow theme
-        }
-        _settings.ThemeSkin = name ?? "";
-        RaisePropertyChanged(string.Empty);
-        _apply();
-        _ = SaveAsync(false);
-    }
-
-    private void SetSkin(bool custom, string accent, string text, string glass, bool liquid, int opacity, string font)
-    {
-        _settings.UseCustomColors = custom;
-        _settings.AccentColorHex = accent;
-        _settings.TextColorHex = text;
-        _settings.GlassColorHex = glass;
-        _settings.LiquidGlass = liquid;
-        _settings.GlassOpacity = opacity;
-        _settings.FontFamilyName = font;
     }
 
     private void RefreshAllAndApply()
@@ -771,6 +790,10 @@ public sealed class SettingsViewModel : ObservableObject
     {
         setter(value);
         RaisePropertyChanged(property);
+        // Every simple settings binding flows through this helper. Previously these controls only
+        // changed the in-memory model, so most toggles/combo boxes appeared inert until the window
+        // was closed and saved. Apply immediately to keep the preview and real island in sync.
+        _apply();
     }
 }
 

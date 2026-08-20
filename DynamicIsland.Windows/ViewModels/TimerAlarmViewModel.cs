@@ -17,6 +17,9 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
     private string _amPm = "AM";
     private bool _use24Hour;
     private AlarmRepeat _alarmRepeat = AlarmRepeat.Once;
+    private string _intervalDays = "1";
+    private DateTime? _repeatEndDate;
+    private bool _sunday, _monday, _tuesday, _wednesday, _thursday, _friday, _saturday;
 
     public TimerAlarmViewModel(TimerAlarmService service, bool use24Hour)
     {
@@ -84,11 +87,44 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
     public string AlarmLabel { get => _alarmLabel; set => SetProperty(ref _alarmLabel, value); }
     public string AmPm { get => _amPm; set => SetProperty(ref _amPm, value); }
     public bool Use24Hour { get => _use24Hour; set => SetProperty(ref _use24Hour, value); }
+    public string IntervalDays { get => _intervalDays; set => SetProperty(ref _intervalDays, value); }
+    public DateTime? RepeatEndDate { get => _repeatEndDate; set => SetProperty(ref _repeatEndDate, value); }
+    public bool Sunday { get => _sunday; set => SetProperty(ref _sunday, value); }
+    public bool Monday { get => _monday; set => SetProperty(ref _monday, value); }
+    public bool Tuesday { get => _tuesday; set => SetProperty(ref _tuesday, value); }
+    public bool Wednesday { get => _wednesday; set => SetProperty(ref _wednesday, value); }
+    public bool Thursday { get => _thursday; set => SetProperty(ref _thursday, value); }
+    public bool Friday { get => _friday; set => SetProperty(ref _friday, value); }
+    public bool Saturday { get => _saturday; set => SetProperty(ref _saturday, value); }
     public Array RepeatOptions => Enum.GetValues<AlarmRepeat>();
     public AlarmRepeat AlarmRepeat { get => _alarmRepeat; set => SetProperty(ref _alarmRepeat, value); }
     public string TimerRemaining => TimerAlarmService.FormatDuration(_service.TimerRemaining);
     public double TimerProgress => _service.TimerProgress * 100;
     public string TimerStateText => _service.State.Timer.Phase.ToString();
+    public bool IsTimerControllable => _service.State.Timer.Phase is TimerPhase.Running or TimerPhase.Paused;
+    public bool ShowLiveTimer => _service.State.Timer.Phase is TimerPhase.Running or TimerPhase.Paused;
+    public string LiveTimerLabel
+    {
+        get
+        {
+            var timer = _service.State.Timer;
+            if (!string.IsNullOrWhiteSpace(timer.Label)) return timer.Label;
+
+            var total = TimeSpan.FromSeconds(Math.Max(1, timer.TotalSeconds));
+            if (total.TotalMinutes >= 1 && Math.Abs(total.TotalMinutes - Math.Round(total.TotalMinutes)) < 0.01)
+                return $"{Math.Round(total.TotalMinutes):0} minute timer";
+            return $"{TimerAlarmService.FormatDuration(total)} timer";
+        }
+    }
+    public string LiveTimerPrimaryGlyph => _service.State.Timer.Phase == TimerPhase.Paused ? "\uE768" : "\uE769";
+    public string LiveTimerPrimaryTooltip => _service.State.Timer.Phase == TimerPhase.Paused ? "Resume timer" : "Pause timer";
+    public string TimerFooterText => _service.State.Timer.Phase switch
+    {
+        TimerPhase.Running => string.IsNullOrWhiteSpace(_service.State.Timer.Label) ? "Timer is running" : _service.State.Timer.Label,
+        TimerPhase.Paused => "Timer paused",
+        TimerPhase.Completed => "Timer completed",
+        _ => "No active timer"
+    };
     public string TimerPrimaryText => _service.State.Timer.Phase switch
     {
         TimerPhase.Running => "Pause",
@@ -100,7 +136,7 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
     {
         AlarmPhase.None => "No alarm set",
         AlarmPhase.Scheduled => $"Scheduled for {TimerAlarmService.FormatAlarmTime(_service.State.Alarm)}"
-            + (_service.State.Alarm.Repeat == AlarmRepeat.Once ? "" : $" · {TimerAlarmService.FormatRepeat(_service.State.Alarm.Repeat)}"),
+            + (_service.State.Alarm.Repeat == AlarmRepeat.Once ? "" : $" · {TimerAlarmService.FormatRepeat(_service.State.Alarm)}"),
         AlarmPhase.Snoozed => $"Snoozed until {_service.State.Alarm.SnoozeUntil:t}",
         AlarmPhase.Ringing => "Alarm ringing",
         _ => "Dismissed"
@@ -126,7 +162,10 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
             hour = Math.Clamp(hour, 1, 12) % 12;
             if (string.Equals(AmPm, "PM", StringComparison.OrdinalIgnoreCase)) hour += 12;
         }
-        _service.SetAlarm(hour, Math.Clamp(minute, 0, 59), Use24Hour, AlarmLabel, AlarmRepeat);
+        var mask = (Sunday ? 1 : 0) | (Monday ? 2 : 0) | (Tuesday ? 4 : 0) | (Wednesday ? 8 : 0)
+            | (Thursday ? 16 : 0) | (Friday ? 32 : 0) | (Saturday ? 64 : 0);
+        var interval = int.TryParse(IntervalDays, out var parsed) ? Math.Clamp(parsed, 1, 365) : 1;
+        _service.SetAlarm(hour, Math.Clamp(minute, 0, 59), Use24Hour, AlarmLabel, AlarmRepeat, mask, interval, RepeatEndDate);
     }
 
     private void OnChanged(object? sender, EventArgs e)
@@ -134,6 +173,12 @@ public sealed class TimerAlarmViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(TimerRemaining));
         RaisePropertyChanged(nameof(TimerProgress));
         RaisePropertyChanged(nameof(TimerStateText));
+        RaisePropertyChanged(nameof(IsTimerControllable));
+        RaisePropertyChanged(nameof(ShowLiveTimer));
+        RaisePropertyChanged(nameof(LiveTimerLabel));
+        RaisePropertyChanged(nameof(LiveTimerPrimaryGlyph));
+        RaisePropertyChanged(nameof(LiveTimerPrimaryTooltip));
+        RaisePropertyChanged(nameof(TimerFooterText));
         RaisePropertyChanged(nameof(TimerPrimaryText));
         RaisePropertyChanged(nameof(AlarmStateText));
         RaisePropertyChanged(nameof(IsAlarmRinging));

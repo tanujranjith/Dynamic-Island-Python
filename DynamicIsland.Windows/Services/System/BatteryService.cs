@@ -8,9 +8,8 @@ public sealed class BatteryService : IDisposable
 {
     private readonly DispatcherTimer _timer = new(DispatcherPriority.Background)
     {
-        // Battery percentage and remaining-time estimates change slowly; a two-second
-        // poll only created needless wake-ups while preserving no visible fidelity.
-        Interval = TimeSpan.FromSeconds(15)
+        // Charging and plug/unplug state should appear promptly in the island.
+        Interval = TimeSpan.FromSeconds(2)
     };
 
     private bool _warned;

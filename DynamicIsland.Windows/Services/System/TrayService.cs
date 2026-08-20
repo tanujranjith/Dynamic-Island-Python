@@ -17,15 +17,20 @@ public sealed class TrayService : IDisposable
     private readonly Action _recenter;
     private readonly Func<Task> _save;
     private readonly Action _quit;
+    private readonly Action _toggleFocus;
+    private readonly Func<bool> _isFocusEnabled;
+    private readonly Forms.ToolStripMenuItem _focusMode;
 
     public TrayService(AppSettings settings, Action openSettings, Action recenter,
-        Func<Task> save, Action quit)
+        Func<Task> save, Action quit, Action toggleFocus, Func<bool> isFocusEnabled)
     {
         _settings = settings;
         _openSettings = openSettings;
         _recenter = recenter;
         _save = save;
         _quit = quit;
+        _toggleFocus = toggleFocus;
+        _isFocusEnabled = isFocusEnabled;
 
         var menu = new Forms.ContextMenuStrip
         {
@@ -34,6 +39,9 @@ public sealed class TrayService : IDisposable
         };
         menu.Items.Add("Open Settings", null, (_, _) => OnUi(_openSettings));
         menu.Items.Add("Recenter Island", null, (_, _) => OnUi(_recenter));
+        _focusMode = new Forms.ToolStripMenuItem("Focus mode") { Checked = isFocusEnabled(), CheckOnClick = false };
+        _focusMode.Click += (_, _) => OnUi(_toggleFocus);
+        menu.Items.Add(_focusMode);
         menu.Items.Add(new Forms.ToolStripSeparator());
         _alwaysOnTop = new Forms.ToolStripMenuItem("Always on Top") { Checked = settings.AlwaysOnTop, CheckOnClick = true };
         _alwaysOnTop.CheckedChanged += (_, _) => OnUi(async () =>
@@ -67,6 +75,7 @@ public sealed class TrayService : IDisposable
     {
         _alwaysOnTop.Checked = _settings.AlwaysOnTop;
         _clickThrough.Checked = _settings.ClickThroughWhenCompact;
+        _focusMode.Checked = _isFocusEnabled();
     }
 
     public void ShowNotification(string title, string message)
@@ -81,7 +90,19 @@ public sealed class TrayService : IDisposable
     {
         var executable = Environment.ProcessPath;
         if (!string.IsNullOrWhiteSpace(executable))
-            Process.Start(new ProcessStartInfo(executable) { UseShellExecute = true });
+        {
+            // This app is intentionally single-instance. Launching the replacement immediately makes
+            // it see the current mutex and exit, so a tiny helper waits for this process to release it.
+            var command = $"Start-Sleep -Milliseconds 700; Start-Process -FilePath '{executable.Replace("'", "''")}'";
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                Arguments = $"-NoProfile -NonInteractive -WindowStyle Hidden -Command \"{command}\""
+            });
+        }
         _quit();
     }
 

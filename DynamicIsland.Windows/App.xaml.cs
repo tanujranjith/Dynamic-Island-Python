@@ -11,7 +11,9 @@ namespace DynamicIsland.Windows;
 
 public partial class App : System.Windows.Application
 {
+    private const string ShowSettingsSignalName = "Local\\DynamicIsland.Windows.ShowSettings";
     private Mutex? _singleInstance;
+    private EventWaitHandle? _showSettingsSignal;
     private LoggingService? _log;
     private SettingsService? _settingsService;
     private StartupService? _startupService;
@@ -29,6 +31,8 @@ public partial class App : System.Windows.Application
     private StocksService? _stocks;
     private CalendarService? _calendar;
     private NotificationListenerService? _notifications;
+    private NotificationHistoryService? _notificationHistory;
+    private GlobalHotkeyService? _hotkeys;
     private PrivacySensorService? _privacy;
     private ClipboardService? _clipboard;
     private WindowPositionService? _position;
@@ -37,7 +41,6 @@ public partial class App : System.Windows.Application
     private IslandWindow? _islandWindow;
     private SettingsWindow? _settingsWindow;
     private VisionSettingsWindow? _visionWindow;
-    private TimerAlarmWindow? _timerWindow;
     private TimerAlarmViewModel? _timerViewModel;
     private TrayService? _tray;
     private AppSettings? _settings;
@@ -49,12 +52,32 @@ public partial class App : System.Windows.Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        var openSettingsFromCommandLine = e.Args
+            .Any(arg => string.Equals(arg, "--settings", StringComparison.OrdinalIgnoreCase));
         _singleInstance = new Mutex(true, "Local\\DynamicIsland.Windows.SingleInstance", out var firstInstance);
         if (!firstInstance)
         {
+            if (openSettingsFromCommandLine)
+            {
+                try
+                {
+                    using var signal = EventWaitHandle.OpenExisting(ShowSettingsSignalName);
+                    signal.Set();
+                }
+                catch (WaitHandleCannotBeOpenedException) { }
+            }
             Shutdown();
             return;
         }
+        _showSettingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSettingsSignalName);
+        _ = Task.Run(() =>
+        {
+            while (!_isShuttingDown && _showSettingsSignal.WaitOne())
+            {
+                if (!_isShuttingDown)
+                    Dispatcher.BeginInvoke(ShowSettings);
+            }
+        });
 
         _log = new LoggingService();
         _settingsService = new SettingsService(_log);
@@ -68,7 +91,9 @@ public partial class App : System.Windows.Application
             args.Handled = true;
         };
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
             _log.Error("Unhandled application exception", args.ExceptionObject as Exception);
+        };
 
         _startupService = new StartupService(_log);
         if (_settings.LaunchOnStartup != _startupService.IsEnabled())
@@ -90,6 +115,7 @@ public partial class App : System.Windows.Application
         _stocks = new StocksService(_log);
         _calendar = new CalendarService(_log);
         _notifications = new NotificationListenerService(_log);
+        _notificationHistory = new NotificationHistoryService(_log);
         _privacy = new PrivacySensorService(_log);
         _clipboard = new ClipboardService(_log);
         _vision.Changed += (_, state) => Dispatcher.BeginInvoke(() => HandleVisionAutomations(state));
@@ -97,10 +123,10 @@ public partial class App : System.Windows.Application
             _tray?.ShowNotification("Battery low", $"{pct}% remaining — plug in soon."));
         _position = new WindowPositionService();
         _islandViewModel = new IslandViewModel(_settings, _media, _audio, _battery, _clock, _timerAlarm, _theme,
-            _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy);
-        _islandWindow = new IslandWindow(_islandViewModel, _position, _settingsService);
+            _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy, _notificationHistory);
+        _timerViewModel = new TimerAlarmViewModel(_timerAlarm, _settings.Use24HourClock);
+        _islandWindow = new IslandWindow(_islandViewModel, _timerViewModel, _position, _settingsService, _log);
         _islandWindow.OpenSettingsRequested += (_, _) => ShowSettings();
-        _islandWindow.OpenTimerRequested += (_, _) => ShowTimerAlarm();
         _islandWindow.OpenVisionRequested += (_, _) => ShowVisionSettings();
         _islandWindow.OpenClipboardRequested += (_, _) => _ = ShowClipboardAsync();
         _islandWindow.RecenterRequested += (_, _) => Recenter();
@@ -112,11 +138,24 @@ public partial class App : System.Windows.Application
         _media.AvailableAppsChanged += (_, apps) => Dispatcher.BeginInvoke(() =>
             _settingsViewModel.SetAvailableApps(apps));
 
-        _tray = new TrayService(_settings, ShowSettings, Recenter, SaveAndApplyAsync, ShutdownApplication);
+        _tray = new TrayService(_settings, ShowSettings, Recenter, SaveAndApplyAsync, ShutdownApplication,
+            ToggleFocus, () => _settings.FocusModeEnabled);
         _timerAlarm.EventRaised += (_, args) => Dispatcher.BeginInvoke(() =>
             _tray.ShowNotification(args.Title, args.Message));
 
         _islandWindow.Show();
+        _hotkeys = new GlobalHotkeyService(_log);
+        _hotkeys.Attach(_islandWindow);
+        _hotkeys.Register("Expand/collapse", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, 0x20,
+            () => _islandViewModel.ToggleExpandedCommand.Execute(null));
+        _hotkeys.Register("Mute", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, (uint)'M',
+            () => _islandViewModel.ToggleMuteCommand.Execute(null));
+        _hotkeys.Register("Timer", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, (uint)'T',
+            () => _islandWindow.ToggleTimerPanel());
+        _hotkeys.Register("Focus mode", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, (uint)'F',
+            ToggleFocus);
+        _hotkeys.Register("Open settings", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, (uint)'S',
+            ShowSettings);
         _clock.Start();
         _battery.Start();
         _audio.Start();
@@ -127,12 +166,14 @@ public partial class App : System.Windows.Application
         _stocks.Start();
         ApplyLiveActivitySettings();
         await _media.StartAsync();
-
         // First-run onboarding: open the (new) settings so people can explore what's customisable.
-        if (!_settings.HasOnboarded)
+        if (!_settings.HasOnboarded || openSettingsFromCommandLine)
         {
-            _settings.HasOnboarded = true;
-            await _settingsService.SaveAsync(_settings);
+            if (!_settings.HasOnboarded)
+            {
+                _settings.HasOnboarded = true;
+                await _settingsService.SaveAsync(_settings);
+            }
             ShowSettings();
         }
     }
@@ -142,7 +183,8 @@ public partial class App : System.Windows.Application
         if (_settingsViewModel is null) return;
         if (_settingsWindow is null)
         {
-            _settingsWindow = new SettingsWindow { DataContext = _settingsViewModel };
+            _settingsWindow = new SettingsWindow(_settingsViewModel, _islandViewModel!);
+            _settingsWindow.OpenTimerRequested += (_, _) => ShowTimerAlarm();
             _settingsWindow.IsVisibleChanged += (_, _) => UpdateKeepExpanded();
             _settingsWindow.Closing += (_, args) =>
             {
@@ -190,17 +232,7 @@ public partial class App : System.Windows.Application
 
     private void ShowTimerAlarm()
     {
-        if (_timerAlarm is null || _settings is null || _islandWindow is null) return;
-        if (_timerWindow is null)
-        {
-            _timerViewModel = new TimerAlarmViewModel(_timerAlarm, _settings.Use24HourClock);
-            _timerWindow = new TimerAlarmWindow(_islandWindow) { DataContext = _timerViewModel };
-            _timerWindow.Closed += (_, _) => { _timerViewModel.Dispose(); _timerViewModel = null; _timerWindow = null; };
-        }
-        _timerWindow.PositionBelowOwner();
-        _timerWindow.Show();
-        _timerWindow.Activate();
-        FadeIn(_timerWindow);
+        _islandWindow?.ShowTimerPanel();
     }
 
     private async Task SaveAndApplyAsync()
@@ -369,6 +401,7 @@ public partial class App : System.Windows.Application
         if (_islandViewModel is null) return;
         var keep = (_settingsWindow?.IsVisible == true) || (_visionWindow?.IsVisible == true);
         _islandViewModel.KeepExpanded = keep;
+        _islandWindow?.SetSettingsWindowOpen(keep);
         if (!keep) _islandViewModel.IsExpanded = false;
     }
 
@@ -409,7 +442,7 @@ public partial class App : System.Windows.Application
         _autoLockTimer?.Stop();
         _privacyBlur?.Close();
         _tray?.Dispose();
-        _timerWindow?.Close();
+        _timerViewModel?.Dispose();
         _visionWindow?.Close();
         _settingsWindow?.Close();
         _islandViewModel?.Dispose();
@@ -420,6 +453,9 @@ public partial class App : System.Windows.Application
         _stocks?.Dispose();
         _calendar?.Dispose();
         _notifications?.Dispose();
+        _hotkeys?.Dispose();
+        _showSettingsSignal?.Set();
+        _showSettingsSignal?.Dispose();
         _privacy?.Dispose();
         _media?.Dispose();
         _audio?.Dispose();
@@ -430,5 +466,19 @@ public partial class App : System.Windows.Application
         _singleInstance?.ReleaseMutex();
         _singleInstance?.Dispose();
         Shutdown();
+    }
+
+    private void ToggleDefaultTimer()
+    {
+        if (_timerAlarm is null) return;
+        if (_timerAlarm.State.Timer.Phase == TimerPhase.Running) _timerAlarm.PauseTimer();
+        else if (_timerAlarm.State.Timer.Phase == TimerPhase.Paused) _timerAlarm.ResumeTimer();
+        else _timerAlarm.StartTimer(TimeSpan.FromMinutes(10), "Shortcut timer");
+    }
+
+    private void ToggleFocus()
+    {
+        _islandViewModel?.ToggleFocusCommand.Execute(null);
+        ApplySettings();
     }
 }

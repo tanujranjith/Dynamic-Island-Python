@@ -12,6 +12,7 @@ public sealed record AudioState
     public bool ActiveAudioOutput { get; init; }
     public int ActiveSessionCount { get; init; }
     public int AudibleSessionCount { get; init; }
+    public string OutputDeviceId { get; init; } = string.Empty;
     public string OutputDeviceName { get; init; } = string.Empty;
     public string StatusText => Availability != AudioAvailability.Available
         ? "Audio unavailable"

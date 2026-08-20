@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -29,6 +30,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private readonly StocksService _stocksService;
     private readonly CalendarService _calendarService;
     private readonly NotificationListenerService _notificationService;
+    private readonly NotificationHistoryService _notificationHistoryService;
     private readonly PrivacySensorService _privacyService;
     private PrivacySensorState _privacy = PrivacySensorState.None;
     private readonly System.Windows.Threading.DispatcherTimer _notificationTimer = new() { Interval = TimeSpan.FromSeconds(6) };
@@ -42,11 +44,15 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private IReadOnlyList<StockTile> _stockTiles = [];
     private IReadOnlyList<WorldClock> _worldClocks = [];
     private IReadOnlyList<LaunchEntry> _launchItems = [];
+    private QuoteItem[] _quotes = [];
+    private int _quoteIndex;
+    private readonly System.Windows.Threading.DispatcherTimer _quoteTimer = new();
     private (string Label, TimeZoneInfo Zone)[] _worldClockZones = [];
     private string _worldClockConfig = string.Empty;
     private string[] _expandedOrder = ["media", "volume", "status"];
     private MeetingInfo? _meeting;
     private NotificationInfo? _notification;
+    private NotificationHistoryItem? _currentNotificationHistoryItem;
     private int _notificationSeq;
     private MediaInfo _media = MediaInfo.Empty;
     private AudioState _audio = AudioState.Unknown;
@@ -73,7 +79,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         Services.Vision.VisionService visionService, WeatherService weatherService,
         SystemMonitorService systemMonitorService, AudioSpectrumService spectrumService,
         StocksService stocksService, CalendarService calendarService,
-        NotificationListenerService notificationService, PrivacySensorService privacyService)
+        NotificationListenerService notificationService, PrivacySensorService privacyService,
+        NotificationHistoryService notificationHistoryService)
     {
         Settings = settings;
         _mediaService = mediaService;
@@ -90,6 +97,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _calendarService = calendarService;
         _notificationService = notificationService;
         _privacyService = privacyService;
+        _notificationHistoryService = notificationHistoryService;
 
         PreviousCommand = new RelayCommand(() => _ = _mediaService.PreviousAsync(), () => Media.CanPrevious);
         PlayPauseCommand = new RelayCommand(() => _ = _mediaService.TogglePlayPauseAsync(), () => Media.CanPlayPause);
@@ -118,12 +126,34 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _privacyService.Changed += OnPrivacyChanged;
         _notificationTimer.Tick += (_, _) => { _notificationTimer.Stop(); _notification = null; RaiseMany(nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody)); };
         _volumeWarningTimer.Tick += (_, _) => { _volumeWarningTimer.Stop(); _volumeWarningActive = false; RaiseMany(nameof(ShowBanner)); };
+        _quoteTimer.Tick += (_, _) => OnUi(AdvanceQuote);
         LaunchCommand = new RelayCommand<string>(LaunchApp);
         OpenMeetingCommand = new RelayCommand(() => { if (!string.IsNullOrWhiteSpace(_meeting?.JoinUrl)) OpenUrl(_meeting!.JoinUrl); });
         SeekCommand = new RelayCommand<double>(f => _ = _mediaService.SeekFractionAsync(f));
         OpenMediaAppCommand = new RelayCommand(() => { if (Settings.ClickArtOpensApp) _mediaService.LaunchSource(); });
         ToggleFavoriteCommand = new RelayCommand(() => IsFavorite = !IsFavorite);
         SelectOutputDeviceCommand = new RelayCommand<string>(id => { if (!string.IsNullOrEmpty(id)) _audioService.SetDefaultOutputDevice(id); });
+        ToggleFocusCommand = new RelayCommand(() =>
+        {
+            Settings.FocusModeEnabled = !Settings.FocusModeEnabled;
+            _ = PersistSettingsAsync();
+            RaiseComputed();
+        });
+        OpenNotificationHistoryCommand = new RelayCommand(RefreshNotificationHistory);
+        ClearNotificationHistoryCommand = new RelayCommand(() =>
+        {
+            _notificationHistoryService.Clear();
+            RefreshNotificationHistory();
+        });
+        DismissCurrentNotificationCommand = new RelayCommand(DismissCurrentNotification);
+        OpenNotificationCommand = new RelayCommand<NotificationHistoryItem>(OpenNotification);
+        DismissHistoryItemCommand = new RelayCommand<NotificationHistoryItem>(item =>
+        {
+            if (item is null) return;
+            _notificationHistoryService.Dismiss(item.Id);
+            RefreshNotificationHistory();
+        });
+        RefreshNotificationHistory();
         _batteryService.Changed += OnBatteryChanged;
         _clockService.Tick += OnClockTick;
         _timerAlarmService.Changed += OnTimerAlarmChanged;
@@ -135,7 +165,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public MediaInfo Media { get => _media; private set { if (SetProperty(ref _media, value)) UpdateArtwork(value.Artwork); } }
     public AudioState Audio { get => _audio; private set => SetProperty(ref _audio, value); }
     public BatteryState Battery { get => _battery; private set => SetProperty(ref _battery, value); }
-    public bool IsExpanded { get => _isExpanded; set { if (SetProperty(ref _isExpanded, value)) { UpdatePreviewRetention(); RaiseComputed(); } } }
+    public bool IsExpanded { get => _isExpanded; set { if (SetProperty(ref _isExpanded, value)) { if (value && Settings.QuoteRotation == QuoteRotation.EveryExpand) AdvanceQuote(); UpdatePreviewRetention(); RaiseComputed(); } } }
     public bool IsCompact => !IsExpanded;
     // When a settings window is open we pin the island expanded so size/appearance changes are visible live.
     public bool KeepExpanded { get => _keepExpanded; set { if (SetProperty(ref _keepExpanded, value)) { RaisePropertyChanged(nameof(PinExpanded)); if (value) IsExpanded = true; } } }
@@ -152,9 +182,15 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         : "#5AA7FF";
     public MediaBrush AccentBrush => FrozenBrush(EffectiveAccentHex);
     public MediaBrush AccentSoftBrush => FrozenBrush(WithAlpha(EffectiveAccentHex, 0x33));
-    public MediaBrush GlassBrush => Settings.UseCustomColors && !string.IsNullOrWhiteSpace(Settings.GlassColorHex)
-        ? FrozenBrush(Settings.GlassColorHex)
-        : (IsDarkTheme ? FrozenBrush("#FF313539") : FrozenBrush("#FFEAECEF"));
+    public MediaBrush IslandSurfaceBrush => IsDarkTheme ? FrozenBrush("#FA000000") : FrozenBrush("#FFF5F5F7");
+    public MediaBrush IslandCardBrush => IsDarkTheme ? FrozenBrush("#FF1C1C1E") : FrozenBrush("#FFFFFFFF");
+    public MediaBrush IslandDividerBrush => IsDarkTheme ? FrozenBrush("#FF2D2D30") : FrozenBrush("#FFD1D1D6");
+    // Shell controls and progress bars need real theme-aware contrast. The old shared
+    // AppleWhite resources disappeared against the light island surface.
+    public MediaBrush ShellControlBrush => IsDarkTheme ? FrozenBrush("#FFF5F5F7") : FrozenBrush("#FF1C1C1E");
+    public MediaBrush ShellControlHoverBrush => IsDarkTheme ? FrozenBrush("#1FFFFFFF") : FrozenBrush("#14000000");
+    public MediaBrush ProgressFillBrush => IsDarkTheme ? FrozenBrush("#FFF5F5F7") : FrozenBrush("#FF3A3A3C");
+    public MediaBrush ProgressTrackBrush => IsDarkTheme ? FrozenBrush("#FF36363A") : FrozenBrush("#FFD1D1D6");
     public System.Windows.Media.FontFamily UiFontFamily
     {
         get { try { return new System.Windows.Media.FontFamily(Settings.FontFamilyName); } catch { return new System.Windows.Media.FontFamily("Segoe UI Variable Text"); } }
@@ -163,18 +199,28 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public MediaBrush PanelBorderBrush => IsDarkTheme ? FrozenBrush("#28FFFFFF") : FrozenBrush("#280C213B");
     public ImageSource? Artwork => _artwork;
     public bool HasArtwork => _artwork is not null;
-    public bool IsLiquidGlass => Settings.LiquidGlass;
-    public double GlassBackgroundOpacity => Settings.LiquidGlass ? Math.Clamp(Settings.GlassOpacity / 100.0, 0.2, 1.0) : 1.0;
     public bool ShowCompactArt => Settings.ShowAlbumArtInCompact && HasArtwork && PrimaryActivity == IslandActivity.Media;
     public double AlbumScale => Math.Clamp(Settings.AlbumArtScale, 70, 130) / 100.0;
     public double ExpandedAlbumScale => AlbumScale * Math.Clamp(Settings.ExpandedAlbumArtSize, 40, 160) / 100.0;
-    // Album / icon corner radius: 0 = square, ~30% = squircle, 50% = circle. The ring geometry is
-    // regenerated to match so the progress ring always traces the same shape as the cover.
-    public double AlbumRadiusFraction => Math.Clamp(Settings.AlbumCornerRadius, 0, 50) / 100.0;
-    public double CompactAlbumRadius => 28 * AlbumRadiusFraction;
-    public double ExpandedAlbumRadius => 76 * AlbumRadiusFraction; // expanded album art is 76px in the redesign
+    public double PreviewIslandWidth => Math.Clamp(Settings.IslandWidth, 190, 360);
+    public double PreviewIslandHeight => Math.Clamp(Settings.IslandHeight, 50, 90);
+    // Keep the two album-size controls useful without allowing them to break the compact/expanded layouts.
+    // Keep artwork comfortably inside the compact pill so a large album-art preference cannot
+    // crowd out the title and status lane on small custom heights.
+    public double CompactAlbumSize => Math.Clamp((Settings.IslandHeight - 12) * AlbumScale, 36, 52);
+    public double ExpandedAlbumSize => Math.Clamp(120 * ExpandedAlbumScale, 48, 140);
+    public double PreviewCompactAlbumSize => Math.Clamp(46 * AlbumScale, 34, 60);
+    public double PreviewExpandedAlbumSize => Math.Clamp(66 * ExpandedAlbumScale, 32, 90);
+    // Album / icon corner radius deliberately stops at a squircle, never a circle.
+    public double AlbumRadiusFraction => Math.Clamp(Settings.AlbumCornerRadius, 0, 30) / 100.0;
+    public double CompactAlbumRadius => (CompactAlbumSize / 2) * AlbumRadiusFraction;
+    public double ExpandedAlbumRadius => (ExpandedAlbumSize / 2) * AlbumRadiusFraction;
+    public double PreviewCompactAlbumRadius => (PreviewCompactAlbumSize / 2) * AlbumRadiusFraction;
+    public double PreviewExpandedAlbumRadius => (PreviewExpandedAlbumSize / 2) * AlbumRadiusFraction;
     public CornerRadius CompactIconCorner => new(CompactAlbumRadius);
     public CornerRadius ExpandedIconCorner => new(ExpandedAlbumRadius);
+    public CornerRadius PreviewCompactIconCorner => new(PreviewCompactAlbumRadius);
+    public CornerRadius PreviewExpandedIconCorner => new(PreviewExpandedAlbumRadius);
     public Geometry CompactRingGeometry => RoundedSquare(32, 32 * AlbumRadiusFraction);
     public Geometry ExpandedRingGeometry => RoundedSquare(66, 66 * AlbumRadiusFraction);
     public double CompactRingPerimeterUnits => RoundedSquarePerimeter(32, 32 * AlbumRadiusFraction) / 2.5;
@@ -183,6 +229,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool ShowCompactMediaRing => ShowCompactArt && Settings.ShowMediaProgressRing && HasMediaDuration;
     public bool ShowCompactTimerRing => PrimaryActivity == IslandActivity.Timer && Settings.ShowTimerRing;
     public bool ShowCompactRingTrack => ShowCompactMediaRing || ShowCompactTimerRing;
+    public bool ShowTimerOrb => IsCompact && _timerAlarmService.State.Timer.Phase is TimerPhase.Running or TimerPhase.Paused;
+    public double TimerRemainingProgress => Math.Clamp(100d - TimerProgress, 0d, 100d);
+    public double TimerOrbPerimeterUnits => Math.PI * 36d / 3d;
     public bool ShowExpandedMediaRing => Settings.ShowMedia && HasArtwork && Settings.ShowMediaProgressRing && HasMediaDuration;
     public bool ShowMedia => Settings.ShowMedia;
     public bool ScrollTitles => Settings.ScrollLongTitles;
@@ -190,6 +239,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool ShowBattery => Settings.ShowBattery && Battery.IsAvailable;
     public bool IsCharging => ShowBattery && Battery.IsCharging;
     public bool ShowBatteryLevel => ShowBattery && !Battery.IsCharging;
+    // Keep the compact island calm: when plugged in, use the right edge for a
+    // tiny charging readout instead of trying to squeeze in both the clock and
+    // battery percentage.
+    public bool IsPowerConnected => ShowBattery && Battery.IsPluggedIn;
+    public bool ShowCompactChargingIndicator => IsPowerConnected;
+    public bool ShowCompactSecondary => !IsPowerConnected;
     public bool ShowClock => Settings.ShowClock;
     public bool ShowTimerAlarm => Settings.ShowTimerAlarm;
     public bool DebugOverlay => Settings.DebugOverlay;
@@ -199,6 +254,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool IsAudioActive => Audio.Availability == AudioAvailability.Available && Audio.ActiveAudioOutput && !Audio.SystemMuted;
     public bool ShowAudioStatusText => !IsAudioActive;
     public bool ShowDate => Settings.ShowDate;
+    public bool IsAppleStyle => Settings.IslandVisualMode == IslandVisualMode.Apple;
+    public bool IsStatsStyle => Settings.IslandVisualMode == IslandVisualMode.Stats;
     public VisionState Vision { get => _vision; private set => SetProperty(ref _vision, value); }
     // Secondary status dot (same idiom as the audio dot) — deliberately not part of PrimaryActivity.
     public bool ShowVisionStatus => Settings.ShowVisionStatus && Settings.VisionEnabled
@@ -216,6 +273,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     // ===== Per-element font sizes (each = default × element% × interface%) =====
     private double Scaled(int elementPercent, double baseSize) =>
         baseSize * Math.Clamp(elementPercent, 60, 160) / 100.0 * Math.Clamp(Settings.InterfaceScale, 70, 150) / 100.0;
+    public double InterfaceScaleFactor => Math.Clamp(Settings.InterfaceScale, 70, 150) / 100.0;
     public double ClockFontSize => Scaled(Settings.ClockSize, 17);
     public double DateFontSize => Scaled(Settings.DateSize, 10);
     public double BatteryGlyphFontSize => Scaled(Settings.BatterySize, 11);
@@ -230,15 +288,20 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public double CompactGlyphFontSize => Scaled(Settings.CompactTextSize, 12);
     public double CompactPrimaryFontSize => Scaled(Settings.CompactTextSize, 13);
     public double CompactSecondaryFontSize => Scaled(Settings.CompactTextSize, 11);
+    public double CompactClockFontSize => Scaled(Settings.CompactTextSize, 11);
+    public double ExpandedMediaTitleFontSize => Scaled(Settings.MediaTitleSize, 18);
+    public double ExpandedMediaArtistFontSize => Scaled(Settings.MediaArtistSize, 13);
 
-    // ===== Weather =====
-    public bool ShowWeather => Settings.ShowWeather && _weather is not null;
+    // ===== Focus mode / Weather =====
+    public bool FocusModeEnabled => Settings.FocusModeEnabled;
+    public string FocusModeText => FocusModeEnabled ? "Focus on" : "Focus off";
+    public bool ShowWeather => !FocusModeEnabled && Settings.ShowWeather && _weather is not null;
     public string WeatherGlyph => _weather?.Glyph ?? string.Empty;
     public string WeatherTempText => _weather?.TempText ?? string.Empty;
     public string WeatherDescText => _weather?.Description ?? string.Empty;
 
     // ===== System monitor =====
-    public bool ShowSystemMonitor => Settings.ShowSystemMonitor;
+    public bool ShowSystemMonitor => !FocusModeEnabled && Settings.ShowSystemMonitor;
     public bool ShowCompactRam => Settings.ShowRamInCompact;
     public string CpuText => $"{_sysStats.CpuPercent}%";
     public string RamText => $"{_sysStats.RamPercent}%";
@@ -278,7 +341,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     }
 
     // ===== Countdown =====
-    public bool ShowCountdown => Settings.ShowCountdown && !string.IsNullOrWhiteSpace(Settings.CountdownDate);
+    public bool ShowCountdown => !FocusModeEnabled && Settings.ShowCountdown && !string.IsNullOrWhiteSpace(Settings.CountdownDate);
     public string CountdownText
     {
         get
@@ -290,8 +353,49 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         }
     }
 
+    // ===== Quotes =====
+    public bool ShowQuotes => Settings.QuotePlacement != QuotePlacement.Off && _quotes.Length > 0;
+    // Time-sensitive activities must stay visible even when compact quotes are enabled.
+    public bool ShowQuoteInCompact => ShowQuotes && PrimaryActivity is not (IslandActivity.Alarm or IslandActivity.Timer)
+        && Settings.QuotePlacement is (QuotePlacement.Compact or QuotePlacement.Both);
+    public bool ShowQuoteInExpanded => ShowQuotes
+        && Settings.QuotePlacement is (QuotePlacement.Expanded or QuotePlacement.Both);
+    public string QuoteText => ShowQuotes ? _quotes[_quoteIndex % _quotes.Length].Text : string.Empty;
+    public string QuoteAuthor => ShowQuotes ? _quotes[_quoteIndex % _quotes.Length].Author : string.Empty;
+    public string QuoteAuthorDisplay => QuoteAuthor.Length > 0 ? "— " + QuoteAuthor : string.Empty;
+    public bool ShowQuoteAuthor => QuoteAuthor.Length > 0;
+    public double QuoteTextFontSize => Scaled(Settings.QuoteSize, 13);
+    public double QuoteAuthorFontSize => Scaled(Settings.QuoteSize, 10);
+
+    private void AdvanceQuote()
+    {
+        if (_quotes.Length == 0) return;
+        _quoteIndex = (_quoteIndex + 1) % _quotes.Length;
+        RaiseMany(nameof(QuoteText), nameof(QuoteAuthor), nameof(QuoteAuthorDisplay), nameof(ShowQuoteAuthor),
+            nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText));
+    }
+
+    private void ConfigureQuoteRotation()
+    {
+        _quoteTimer.Stop();
+        var interval = Settings.QuoteRotation switch
+        {
+            QuoteRotation.EveryMinute => TimeSpan.FromMinutes(1),
+            QuoteRotation.Every5Minutes => TimeSpan.FromMinutes(5),
+            QuoteRotation.Every15Minutes => TimeSpan.FromMinutes(15),
+            QuoteRotation.Every30Minutes => TimeSpan.FromMinutes(30),
+            QuoteRotation.EveryHour => TimeSpan.FromHours(1),
+            _ => TimeSpan.Zero
+        };
+        if (ShowQuotes && _quotes.Length > 1 && interval > TimeSpan.Zero)
+        {
+            _quoteTimer.Interval = interval;
+            _quoteTimer.Start();
+        }
+    }
+
     // ===== World clocks =====
-    public bool ShowWorldClocks => Settings.ShowWorldClocks && WorldClocks.Count > 0;
+    public bool ShowWorldClocks => !FocusModeEnabled && Settings.ShowWorldClocks && WorldClocks.Count > 0;
     public IReadOnlyList<WorldClock> WorldClocks => _worldClocks;
     private static string ShortZone(string id)
     {
@@ -301,11 +405,11 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     }
 
     // ===== Stocks =====
-    public bool ShowStocks => Settings.ShowStocks && _stocks.Count > 0;
+    public bool ShowStocks => !FocusModeEnabled && Settings.ShowStocks && _stocks.Count > 0;
     public IReadOnlyList<StockTile> Stocks => _stockTiles;
 
     // ===== Next meeting =====
-    public bool ShowNextMeeting => Settings.ShowNextMeeting && _meeting is not null;
+    public bool ShowNextMeeting => !FocusModeEnabled && Settings.ShowNextMeeting && _meeting is not null;
     public string MeetingTitle => _meeting?.Title ?? string.Empty;
     public string MeetingWhen => _meeting?.CountdownText ?? string.Empty;
     public bool HasMeetingJoin => !string.IsNullOrWhiteSpace(_meeting?.JoinUrl);
@@ -315,17 +419,18 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public string BatteryTimeText => Battery.TimeRemainingText;
 
     // ===== Quick launch =====
-    public bool ShowQuickLaunch => Settings.ShowQuickLaunch && LaunchItems.Count > 0;
+    public bool ShowQuickLaunch => !FocusModeEnabled && Settings.ShowQuickLaunch && LaunchItems.Count > 0;
     public IReadOnlyList<LaunchEntry> LaunchItems => _launchItems;
 
     public bool ShowClipboard => Settings.ShowClipboard;
     // True when any of the grouped live-activity widgets is enabled (so the panel can be shown/hidden cleanly).
-    public bool ShowWidgetsPanel => ShowWeather || ShowStocks || ShowCountdown || ShowNextMeeting
-        || ShowWorldClocks || ShowSystemMonitor || ShowBatteryTime;
+    public bool ShowWidgetsPanel => !FocusModeEnabled && (ShowWeather || ShowStocks || ShowCountdown || ShowNextMeeting
+        || ShowWorldClocks || ShowSystemMonitor || ShowBatteryTime);
     // Secondary widgets surfaced under the status panel in the redesigned expanded island (weather and the
     // system monitor get their own cards, so they're excluded here). Collapses the strip when nothing's on.
-    public bool ShowStatusExtras => ShowBatteryLevel || IsCharging || ShowVisionStatus || ShowStocks
-        || ShowCountdown || ShowNextMeeting || ShowWorldClocks || ShowBatteryTime || ShowPrivacyInUse;
+    public bool ShowStatusExtras => ShowBatteryLevel || IsCharging || ShowVisionStatus
+        || (!FocusModeEnabled && (ShowStocks || ShowCountdown || ShowNextMeeting || ShowWorldClocks))
+        || ShowBatteryTime || ShowPrivacyInUse;
 
     // ===== Outer island corner radius (user-chosen via the slider, 0–48 DIP) =====
     private double ClampedCornerRadius => Math.Clamp(Settings.IslandCornerRadius, 0, 48);
@@ -333,14 +438,17 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public CornerRadius IslandInnerCornerRadius => new(Math.Max(0, ClampedCornerRadius - 1));
 
     // ===== Notification banner (transient) =====
-    public bool ShowNotification => _notification is not null && Settings.ShowNotifications;
+    public bool ShowNotification => _notification is not null && Settings.ShowNotifications && !FocusModeEnabled;
     public string NotificationApp => _notification?.App ?? string.Empty;
     public string NotificationTitle => _notification?.Title ?? string.Empty;
     public string NotificationBody => _notification?.Body ?? string.Empty;
     public int NotificationSeq => _notificationSeq;
+    public ObservableCollection<NotificationHistoryItem> NotificationHistory { get; } = [];
+    public bool HasNotificationHistory => NotificationHistory.Count > 0;
+    public bool ShowEmptyNotificationHistory => !HasNotificationHistory;
 
     // ===== Unified banner (Windows notification OR volume warning) =====
-    public bool ShowBanner => ShowNotification || (_volumeWarningActive && Settings.VolumeWarningEnabled);
+    public bool ShowBanner => ShowNotification || (_volumeWarningActive && Settings.VolumeWarningEnabled && !FocusModeEnabled);
     public string BannerApp => _volumeWarningActive && !ShowNotification ? "Volume" : NotificationApp;
     public string BannerTitle => _volumeWarningActive && !ShowNotification ? "High volume" : NotificationTitle;
     public string BannerBody => _volumeWarningActive && !ShowNotification
@@ -383,8 +491,14 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         ? string.Join("  |  ", new[] { Media.Artist, Media.SourceAppName }.Where(x => !string.IsNullOrWhiteSpace(x)))
         : "Start playback in any supported app";
     public string PlayPauseGlyph => Media.IsPlaying ? "\uE769" : "\uE768";
-    public double MediaProgress => Media.Duration.TotalSeconds <= 0 ? 0
-        : Math.Clamp(Media.Position.TotalSeconds / Media.Duration.TotalSeconds * 100, 0, 100);
+    // Keep the progress binding read-only at runtime; WPF otherwise attempts to write back
+    // when the ProgressBar initializes and aborts startup.
+    public double MediaProgress
+    {
+        get => Media.Duration.TotalSeconds <= 0 ? 0
+            : Math.Clamp(Media.Position.TotalSeconds / Media.Duration.TotalSeconds * 100, 0, 100);
+        set { }
+    }
     public bool ShowMediaTimes => Media.HasSession && Media.Duration.TotalSeconds > 0;
     public string MediaElapsedText => ShowMediaTimes ? FormatClockTime(Media.Position) : string.Empty;
     public string MediaTotalText => ShowMediaTimes ? FormatClockTime(Media.Duration) : string.Empty;
@@ -430,9 +544,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public void RefreshOutputDevices()
     {
         OutputDevices.Clear();
-        var current = Audio.OutputDeviceName;
+        var current = Audio.OutputDeviceId;
         foreach (var (id, name) in _audioService.GetOutputDevices())
-            OutputDevices.Add(new OutputDeviceItem(id, name, string.Equals(name, current, StringComparison.Ordinal)));
+            OutputDevices.Add(new OutputDeviceItem(id, name, string.Equals(id, current, StringComparison.Ordinal)));
     }
     public ICommand SelectOutputDeviceCommand { get; private set; } = null!;
     public string ClockText => _now.ToString(Settings.Use24HourClock
@@ -446,7 +560,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public string DateText => _now.ToString("ddd, MMM d");
     public string DateLongText => _now.ToString("dddd, MMMM d");
     public string BatteryText => !Battery.IsAvailable ? string.Empty : $"{Battery.Percentage}%";
-    public string ChargingText => Battery.IsCharging ? $"{Battery.Percentage}%" : string.Empty;
+    public string ChargingText => Battery.IsPluggedIn ? $"{Battery.Percentage}%" : string.Empty;
     public string BatteryGlyph => Battery.IsCharging ? "\uE83E" : "\uE850";
     public string TimerText => TimerAlarmService.FormatDuration(_timerAlarmService.TimerRemaining);
     public double TimerProgress => _timerAlarmService.TimerProgress * 100;
@@ -459,38 +573,47 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _ => "No alarm"
     };
 
-    public string CompactGlyph => PrimaryActivity switch
-    {
-        IslandActivity.Alarm => "\uEA8F",
-        IslandActivity.Timer => "\uE916",
-        IslandActivity.Muted => "\uE74F",
-        IslandActivity.Audio => "\uE995",
-        IslandActivity.Charging => "\uE83E",
-        IslandActivity.Media => Media.IsPlaying ? "\uE768" : "\uE769",
-        _ => "\uE121"
-    };
+    public string CompactGlyph => ShowQuoteInCompact ? "\u201C"
+        : PrimaryActivity switch
+        {
+            IslandActivity.Alarm => "\uEA8F",
+            IslandActivity.Timer => "\uE916",
+            IslandActivity.Muted => "\uE74F",
+            IslandActivity.Audio => "\uE995",
+            IslandActivity.Charging => "\uE83E",
+            IslandActivity.Media => Media.IsPlaying ? "\uE768" : "\uE769",
+            _ => "\uE121"
+        };
 
-    public string CompactPrimaryText => PrimaryActivity switch
-    {
-        IslandActivity.Alarm => _timerAlarmService.State.Alarm.Phase == AlarmPhase.Ringing
-            ? "Alarm" : TimerAlarmService.FormatAlarmTime(_timerAlarmService.State.Alarm),
-        IslandActivity.Timer => _timerAlarmService.State.Timer.Phase == TimerPhase.Completed
-            ? "Timer done" : TimerText,
-        IslandActivity.Muted => "Muted",
-        IslandActivity.Media => Media.DisplayTitle,
-        IslandActivity.Audio => "Audio active",
-        IslandActivity.Charging => "Charging",
-        _ => ClockText
-    };
+    public string CompactPrimaryText => ShowQuoteInCompact
+        ? QuoteText
+        : PrimaryActivity switch
+        {
+            IslandActivity.Alarm => _timerAlarmService.State.Alarm.Phase == AlarmPhase.Ringing
+                ? "Alarm" : TimerAlarmService.FormatAlarmTime(_timerAlarmService.State.Alarm),
+            IslandActivity.Timer => _timerAlarmService.State.Timer.Phase == TimerPhase.Completed
+                ? "Timer done" : TimerText,
+            IslandActivity.Muted => "Muted",
+            IslandActivity.Media => Media.DisplayTitle,
+            IslandActivity.Audio => "Audio active",
+            IslandActivity.Charging => "Charging",
+            _ => ClockText
+        };
 
     public string CompactSecondaryText
     {
         get
         {
             var values = new List<string>();
-            if (PrimaryActivity != IslandActivity.None && Settings.ShowClock) values.Add(ClockText);
-            if (Settings.ShowDate) values.Add(_now.ToString("MMM d"));
-            if (ShowBattery && PrimaryActivity != IslandActivity.Charging) values.Add($"{Battery.Percentage}%");
+            if (ShowQuoteInCompact)
+            {
+                if (QuoteAuthor.Length > 0) values.Add(QuoteAuthor);
+                else if (Settings.ShowClock) values.Add(ClockText);
+            }
+            else
+            {
+                if (PrimaryActivity != IslandActivity.None && Settings.ShowClock) values.Add(ClockText);
+            }
             return string.Join("  |  ", values);
         }
     }
@@ -502,8 +625,10 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             var timer = _timerAlarmService.State.Timer;
             var alarm = _timerAlarmService.State.Alarm;
             if (alarm.Phase is AlarmPhase.Ringing or AlarmPhase.Snoozed or AlarmPhase.Scheduled) return IslandActivity.Alarm;
-            if (timer.Phase is TimerPhase.Running or TimerPhase.Paused ||
-                timer.Phase == TimerPhase.Completed && !timer.CompletionAcknowledged) return IslandActivity.Timer;
+            // A running/paused timer owns the separate orange orb beside the compact island, so it
+            // no longer replaces current media or status content in the main pill. Completion still
+            // takes over briefly so the user cannot miss that the timer finished.
+            if (timer.Phase == TimerPhase.Completed && !timer.CompletionAcknowledged) return IslandActivity.Timer;
             if (Audio.SystemMuted) return IslandActivity.Muted;
             if (Settings.ShowMedia && Media.HasSession) return IslandActivity.Media;
             if (Audio.ActiveAudioOutput) return IslandActivity.Audio;
@@ -525,6 +650,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public ICommand LaunchCommand { get; private set; } = null!;
     public ICommand OpenMeetingCommand { get; private set; } = null!;
     public ICommand ToggleFavoriteCommand { get; private set; } = null!;
+    public ICommand ToggleFocusCommand { get; private set; } = null!;
+    public ICommand OpenNotificationHistoryCommand { get; private set; } = null!;
+    public ICommand ClearNotificationHistoryCommand { get; private set; } = null!;
+    public ICommand DismissCurrentNotificationCommand { get; private set; } = null!;
+    public ICommand OpenNotificationCommand { get; private set; } = null!;
+    public ICommand DismissHistoryItemCommand { get; private set; } = null!;
 
     public void ApplySettings()
     {
@@ -670,14 +801,65 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private void OnNotified(object? sender, NotificationInfo value) => OnUi(() =>
     {
         if (!Settings.ShowNotifications || !PassesNotificationFilter(value.App)) return;
+        if (Settings.NotificationHistoryEnabled)
+        {
+            _currentNotificationHistoryItem = _notificationHistoryService.Add(value.App, value.Title, value.Body, value.CreatedAt);
+            RefreshNotificationHistory();
+        }
         _notification = value;
         _notificationSeq++;
         _bannerSeq++;
         RaiseMany(nameof(ShowNotification), nameof(NotificationApp), nameof(NotificationTitle), nameof(NotificationBody), nameof(NotificationSeq),
             nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq));
         _notificationTimer.Stop();
-        _notificationTimer.Start();
+        if (!FocusModeEnabled) _notificationTimer.Start();
     });
+
+    private void RefreshNotificationHistory()
+    {
+        NotificationHistory.Clear();
+        foreach (var item in _notificationHistoryService.Items)
+            NotificationHistory.Add(item);
+        RaisePropertyChanged(nameof(HasNotificationHistory));
+        RaisePropertyChanged(nameof(ShowEmptyNotificationHistory));
+    }
+
+    private void DismissCurrentNotification()
+    {
+        if (_currentNotificationHistoryItem is not null)
+            _notificationHistoryService.Dismiss(_currentNotificationHistoryItem.Id);
+        _currentNotificationHistoryItem = null;
+        _notification = null;
+        _notificationTimer.Stop();
+        RefreshNotificationHistory();
+        RaiseMany(nameof(ShowNotification), nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody));
+    }
+
+    private static void OpenNotification(NotificationHistoryItem? item)
+    {
+        if (item is null || string.IsNullOrWhiteSpace(item.App)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = item.App,
+                UseShellExecute = true
+            });
+        }
+        catch { }
+    }
+
+    private async Task PersistSettingsAsync()
+    {
+        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DynamicIsland.Windows");
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, "settings.json");
+            await File.WriteAllTextAsync(path, System.Text.Json.JsonSerializer.Serialize(Settings, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { }
+    }
 
     // Allowlist shows only matching apps; blocklist hides them. Matching is case-insensitive substring.
     private bool PassesNotificationFilter(string app)
@@ -763,7 +945,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     });
     private void RaiseMany(params string[] names) { foreach (var n in names) RaisePropertyChanged(n); }
     private void OnTimerAlarmChanged(object? sender, EventArgs e) => OnUi(() => RaiseMany(
-        nameof(TimerText), nameof(TimerProgress), nameof(AlarmText), nameof(PrimaryActivity),
+        nameof(TimerText), nameof(TimerProgress), nameof(TimerRemainingProgress), nameof(ShowTimerOrb), nameof(AlarmText), nameof(PrimaryActivity),
         nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText),
         nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowCompactTimerRing),
         nameof(ShowCompactRingTrack)));
@@ -777,17 +959,20 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         foreach (var property in new[]
         {
-            nameof(IsCompact), nameof(ShowMedia), nameof(ShowVolume), nameof(ShowBattery), nameof(IsCharging),
-            nameof(ShowBatteryLevel), nameof(ShowClock),
+            nameof(IsCompact), nameof(ShowMedia), nameof(ShowVolume), nameof(ShowBattery), nameof(IsCharging), nameof(IsPowerConnected),
+            nameof(FocusModeEnabled), nameof(FocusModeText), nameof(HasNotificationHistory), nameof(ShowEmptyNotificationHistory),
+            nameof(ShowBatteryLevel), nameof(ShowCompactChargingIndicator), nameof(ShowCompactSecondary), nameof(ShowClock),
             nameof(ShowTimerAlarm), nameof(DebugOverlay), nameof(IsReducedMotion), nameof(IsPlaying), nameof(IsMuted),
             nameof(IsAudioActive), nameof(ShowAudioStatusText), nameof(ShowDate),
+            nameof(IsAppleStyle), nameof(IsStatsStyle),
             nameof(Vision), nameof(ShowVisionStatus), nameof(VisionStatusText), nameof(VisionDotBrush), nameof(VisionAlert),
             nameof(CameraPreview), nameof(ShowCameraPreview), nameof(ShowVisionButton),
             nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse),
-            nameof(ClockFontSize), nameof(DateFontSize), nameof(BatteryGlyphFontSize), nameof(BatteryTextFontSize),
+            nameof(InterfaceScaleFactor), nameof(ClockFontSize), nameof(DateFontSize), nameof(BatteryGlyphFontSize), nameof(BatteryTextFontSize),
             nameof(ChargingGlyphFontSize), nameof(ChargingTextFontSize), nameof(CompactChargingTextFontSize),
             nameof(MediaTitleFontSize), nameof(MediaArtistFontSize), nameof(VolumeFontSize), nameof(VisionTextFontSize),
-            nameof(CompactGlyphFontSize), nameof(CompactPrimaryFontSize), nameof(CompactSecondaryFontSize),
+            nameof(CompactGlyphFontSize), nameof(CompactPrimaryFontSize), nameof(CompactSecondaryFontSize), nameof(CompactClockFontSize),
+            nameof(ExpandedMediaTitleFontSize), nameof(ExpandedMediaArtistFontSize),
             nameof(MediaTitle), nameof(MediaArtist),
             nameof(PlayPauseGlyph), nameof(MediaProgress), nameof(ShowMediaTimes), nameof(MediaElapsedText), nameof(MediaTotalText),
             nameof(MediaTimeRemaining), nameof(MediaTrailingTimeText), nameof(ShowNowPlaying), nameof(ShowExplicitBadge), nameof(FavoriteGlyph),
@@ -795,18 +980,24 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(VolumeText), nameof(VolumeGlyph), nameof(OutputDeviceText), nameof(AudioStatusText),
             nameof(ClockText), nameof(ClockTimeText), nameof(ClockAmPm), nameof(DateText), nameof(DateLongText),
             nameof(BatteryText), nameof(ChargingText), nameof(BatteryGlyph), nameof(TimerText),
-            nameof(TimerProgress), nameof(AlarmText), nameof(CompactGlyph), nameof(CompactPrimaryText),
+            nameof(TimerProgress), nameof(TimerRemainingProgress), nameof(ShowTimerOrb), nameof(TimerOrbPerimeterUnits), nameof(AlarmText), nameof(CompactGlyph), nameof(CompactPrimaryText),
             nameof(CompactSecondaryText), nameof(PrimaryActivity), nameof(Artwork), nameof(HasArtwork),
-            nameof(IsLiquidGlass), nameof(GlassBackgroundOpacity), nameof(ShowCompactArt),
+            nameof(ShowCompactArt),
             nameof(ShowCompactMediaRing), nameof(ShowCompactTimerRing), nameof(ShowCompactRingTrack), nameof(ShowExpandedMediaRing), nameof(ScrollTitles),
-            nameof(AlbumScale), nameof(ExpandedAlbumScale), nameof(CompactAlbumRadius), nameof(ExpandedAlbumRadius), nameof(CompactIconCorner), nameof(ExpandedIconCorner),
+            nameof(AlbumScale), nameof(ExpandedAlbumScale), nameof(PreviewIslandWidth), nameof(PreviewIslandHeight), nameof(CompactAlbumSize), nameof(ExpandedAlbumSize), nameof(PreviewCompactAlbumSize), nameof(PreviewExpandedAlbumSize),
+            nameof(CompactAlbumRadius), nameof(ExpandedAlbumRadius), nameof(PreviewCompactAlbumRadius), nameof(PreviewExpandedAlbumRadius),
+            nameof(CompactIconCorner), nameof(ExpandedIconCorner), nameof(PreviewCompactIconCorner), nameof(PreviewExpandedIconCorner),
             nameof(CompactRingGeometry), nameof(ExpandedRingGeometry), nameof(CompactRingPerimeterUnits), nameof(ExpandedRingPerimeterUnits),
             nameof(PrimaryTextBrush), nameof(SecondaryTextBrush), nameof(AccentTextBrush), nameof(PanelBrush),
-            nameof(PanelBorderBrush), nameof(AccentBrush), nameof(AccentSoftBrush), nameof(GlassBrush), nameof(UiFontFamily),
+            nameof(PanelBorderBrush), nameof(AccentBrush), nameof(AccentSoftBrush), nameof(IslandSurfaceBrush), nameof(IslandCardBrush), nameof(IslandDividerBrush),
+            nameof(ShellControlBrush), nameof(ShellControlHoverBrush), nameof(ProgressFillBrush), nameof(ProgressTrackBrush), nameof(UiFontFamily),
             nameof(ShowWeather), nameof(WeatherGlyph), nameof(WeatherTempText), nameof(WeatherDescText),
             nameof(ShowSystemMonitor), nameof(ShowCompactRam), nameof(CpuText), nameof(RamText), nameof(NetText),
             nameof(RamPercentValue), nameof(NetSparkline),
             nameof(ShowCountdown), nameof(CountdownText), nameof(ShowWorldClocks), nameof(WorldClocks),
+            nameof(ShowQuotes), nameof(ShowQuoteInCompact), nameof(ShowQuoteInExpanded),
+            nameof(QuoteText), nameof(QuoteAuthor), nameof(QuoteAuthorDisplay), nameof(ShowQuoteAuthor),
+            nameof(QuoteTextFontSize), nameof(QuoteAuthorFontSize),
             nameof(ShowStocks), nameof(Stocks), nameof(ShowNextMeeting), nameof(MeetingTitle), nameof(MeetingWhen), nameof(HasMeetingJoin),
             nameof(ShowBatteryTime), nameof(BatteryTimeText), nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowNotification), nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq), nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
             nameof(IslandCornerRadius), nameof(IslandInnerCornerRadius),
@@ -839,6 +1030,22 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _expandedOrder = (Settings.ExpandedOrder ?? "media,volume,status")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (_expandedOrder.Length == 0) _expandedOrder = ["media", "volume", "status"];
+
+        var quotes = new List<QuoteItem>();
+        foreach (var line in (Settings.QuotesText ?? "")
+                     .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split('|', 2);
+            var text = parts[0].Trim();
+            if (text.Length == 0) continue;
+            quotes.Add(new QuoteItem(text, parts.Length > 1 ? parts[1].Trim() : ""));
+        }
+        _quotes = quotes.ToArray();
+        _quoteIndex = _quoteIndex % Math.Max(1, _quotes.Length);
+        ConfigureQuoteRotation();
+        RaiseMany(nameof(ShowQuotes), nameof(ShowQuoteInCompact), nameof(ShowQuoteInExpanded),
+            nameof(QuoteText), nameof(QuoteAuthor), nameof(QuoteAuthorDisplay), nameof(ShowQuoteAuthor),
+            nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText));
 
         var launchItems = new List<LaunchEntry>();
         foreach (var line in (Settings.QuickLaunchItems ?? "")
@@ -959,6 +1166,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _privacyService.Changed -= OnPrivacyChanged;
         _notificationTimer.Stop();
         _volumeWarningTimer.Stop();
+        _quoteTimer.Stop();
         if (_previewRetained) { _visionService.ReleasePreview(); _previewRetained = false; }
         _batteryService.Changed -= OnBatteryChanged;
         _clockService.Tick -= OnClockTick;
@@ -971,3 +1179,4 @@ public sealed record WorldClock(string Label, string Time);
 public sealed record LaunchEntry(string Name, string Path, string Glyph);
 public sealed record OutputDeviceItem(string Id, string Name, bool IsCurrent);
 public sealed record StockTile(string Symbol, string PriceText, string ChangeText, bool Up, System.Windows.Media.PointCollection Spark);
+public sealed record QuoteItem(string Text, string Author);

@@ -71,11 +71,15 @@ public sealed class SettingsService(LoggingService log)
 
     private static void Normalize(AppSettings settings)
     {
+        settings.SchemaVersion = Math.Max(2, settings.SchemaVersion);
         settings.SelectedMediaApp = string.IsNullOrWhiteSpace(settings.SelectedMediaApp)
             ? "Automatic" : settings.SelectedMediaApp;
         settings.CollapseDelayMilliseconds = Math.Clamp(settings.CollapseDelayMilliseconds, 100, 5000);
         if (!Enum.IsDefined(settings.Theme)) settings.Theme = ThemeMode.System;
         if (!Enum.IsDefined(settings.IslandSize)) settings.IslandSize = IslandSize.Normal;
+        if (!Enum.IsDefined(settings.IslandVisualMode)) settings.IslandVisualMode = IslandVisualMode.Apple;
+        settings.IslandWidth = Math.Clamp(settings.IslandWidth, 190, 360);
+        settings.IslandHeight = Math.Clamp(settings.IslandHeight, 50, 90);
         if (!Enum.IsDefined(settings.AnimationIntensity)) settings.AnimationIntensity = AnimationIntensity.Normal;
         if (!Enum.IsDefined(settings.DefaultPosition)) settings.DefaultPosition = PositionMode.TopCenter;
         if (settings.DefaultPosition == PositionMode.Manual &&
@@ -93,6 +97,7 @@ public sealed class SettingsService(LoggingService log)
         settings.VolumeSize = Math.Clamp(settings.VolumeSize, 60, 160);
         settings.VisionTextSize = Math.Clamp(settings.VisionTextSize, 60, 160);
         settings.CompactTextSize = Math.Clamp(settings.CompactTextSize, 60, 160);
+        settings.AlbumCornerRadius = Math.Clamp(settings.AlbumCornerRadius, 0, 30);
         settings.IdleOpacityPercent = Math.Clamp(settings.IdleOpacityPercent, 20, 100);
         settings.AutoLockDelaySeconds = Math.Clamp(settings.AutoLockDelaySeconds, 2, 60);
         if (string.IsNullOrWhiteSpace(settings.AccentColorHex)) settings.AccentColorHex = "#5AA7FF";
@@ -100,6 +105,9 @@ public sealed class SettingsService(LoggingService log)
         if (string.IsNullOrWhiteSpace(settings.ExpandedOrder)) settings.ExpandedOrder = "media,volume,status";
         settings.LowBatteryThreshold = Math.Clamp(settings.LowBatteryThreshold, 5, 50);
         settings.VolumeWarningThreshold = Math.Clamp(settings.VolumeWarningThreshold, 10, 100);
+        if (!Enum.IsDefined(settings.QuotePlacement)) settings.QuotePlacement = QuotePlacement.Off;
+        if (!Enum.IsDefined(settings.QuoteRotation)) settings.QuoteRotation = QuoteRotation.Static;
+        settings.QuoteSize = Math.Clamp(settings.QuoteSize, 60, 160);
     }
 
     public string PresetsDir => Path.Combine(_directory, "presets");

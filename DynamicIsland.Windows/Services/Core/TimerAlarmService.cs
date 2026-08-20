@@ -124,15 +124,18 @@ public sealed class TimerAlarmService : IDisposable
         SaveAndNotify();
     }
 
-    public void SetAlarm(int hour, int minute, bool use24Hour, string? label = null, AlarmRepeat repeat = AlarmRepeat.Once)
+    public void SetAlarm(int hour, int minute, bool use24Hour, string? label = null, AlarmRepeat repeat = AlarmRepeat.Once,
+        int weekdayMask = 0, int intervalDays = 1, DateTime? endDate = null)
     {
         StopSound();
         var h = Math.Clamp(hour, 0, 23);
         var m = Math.Clamp(minute, 0, 59);
-        // Weekly anchors on the weekday of the first occurrence, so it repeats on that same day each week.
-        var firstDaily = NextOccurrence(h, m, AlarmRepeat.Daily, null, DateTimeOffset.Now);
+        var now = DateTimeOffset.Now;
+        var firstDaily = RecurrenceCalculator.Next(now, h, m, AlarmRepeat.Daily) ?? now.AddDays(1);
         int? anchor = repeat == AlarmRepeat.Weekly ? (int)firstDaily.DayOfWeek : null;
-        var target = NextOccurrence(h, m, repeat, anchor, DateTimeOffset.Now);
+        var anchorDate = repeat == AlarmRepeat.EveryNDays ? (DateTime?)firstDaily.Date : null;
+        var target = RecurrenceCalculator.Next(now, h, m, repeat, anchor, anchorDate, weekdayMask, intervalDays, endDate);
+        if (target is null) return;
         State.Alarm = new AlarmState
         {
             Phase = AlarmPhase.Scheduled,
@@ -142,20 +145,13 @@ public sealed class TimerAlarmService : IDisposable
             Label = label?.Trim() ?? string.Empty,
             Repeat = repeat,
             RepeatAnchorDayOfWeek = anchor,
+            RepeatAnchorDate = anchorDate,
+            RepeatWeekdayMask = Math.Clamp(weekdayMask, 0, 127),
+            RepeatIntervalDays = Math.Clamp(intervalDays, 1, 365),
+            RepeatEndDate = endDate?.Date,
             TargetAt = target
         };
         SaveAndNotify();
-    }
-
-    // Next date/time strictly after <paramref name="after"/> matching the repeat rule.
-    private static DateTimeOffset NextOccurrence(int hour, int minute, AlarmRepeat repeat, int? anchorDow, DateTimeOffset after)
-    {
-        var candidate = new DateTimeOffset(after.Year, after.Month, after.Day, hour, minute, 0, after.Offset);
-        while (candidate <= after
-               || (repeat == AlarmRepeat.Weekdays && candidate.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
-               || (repeat == AlarmRepeat.Weekly && anchorDow is int dow && (int)candidate.DayOfWeek != dow))
-            candidate = candidate.AddDays(1);
-        return candidate;
     }
 
     // Advances a repeating alarm to its next occurrence; returns false for a one-shot alarm.
@@ -166,7 +162,14 @@ public sealed class TimerAlarmService : IDisposable
         alarm.RingStartedAt = null;
         alarm.SnoozeUntil = null;
         alarm.SnoozeCount = 0;
-        alarm.TargetAt = NextOccurrence(alarm.Hour, alarm.Minute, alarm.Repeat, alarm.RepeatAnchorDayOfWeek, after);
+        alarm.TargetAt = RecurrenceCalculator.Next(after, alarm.Hour, alarm.Minute, alarm.Repeat,
+            alarm.RepeatAnchorDayOfWeek, alarm.RepeatAnchorDate, alarm.RepeatWeekdayMask,
+            alarm.RepeatIntervalDays, alarm.RepeatEndDate);
+        if (alarm.TargetAt is null)
+        {
+            alarm.Phase = AlarmPhase.Dismissed;
+            return false;
+        }
         return true;
     }
 
@@ -362,9 +365,25 @@ public sealed class TimerAlarmService : IDisposable
     {
         AlarmRepeat.Daily => "Daily",
         AlarmRepeat.Weekdays => "Weekdays",
+        AlarmRepeat.Weekends => "Weekends",
         AlarmRepeat.Weekly => "Weekly",
+        AlarmRepeat.SelectedWeekdays => "Selected weekdays",
+        AlarmRepeat.EveryNDays => "Every N days",
         _ => "Once"
     };
+
+    public static string FormatRepeat(AlarmState alarm)
+    {
+        if (alarm.Repeat == AlarmRepeat.SelectedWeekdays)
+        {
+            var days = Enum.GetValues<DayOfWeek>()
+                .Where(day => (alarm.RepeatWeekdayMask & (1 << (int)day)) != 0)
+                .Select(day => day.ToString()[..3]);
+            return string.Join(", ", days);
+        }
+        if (alarm.Repeat == AlarmRepeat.EveryNDays) return $"Every {Math.Max(1, alarm.RepeatIntervalDays)} days";
+        return FormatRepeat(alarm.Repeat);
+    }
 
     public static string FormatAlarmTime(AlarmState alarm)
     {
