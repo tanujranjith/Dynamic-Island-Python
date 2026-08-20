@@ -2,7 +2,7 @@ namespace DynamicIsland.Windows.Models;
 
 public enum TimerPhase { Idle, Running, Paused, Completed }
 public enum AlarmPhase { None, Scheduled, Ringing, Snoozed, Dismissed }
-public enum AlarmRepeat { Once, Daily, Weekdays, Weekly }
+public enum AlarmRepeat { Once, Daily, Weekdays, Weekends, Weekly, SelectedWeekdays, EveryNDays }
 
 public sealed class TimerState
 {
@@ -26,6 +26,10 @@ public sealed class AlarmState
     public AlarmRepeat Repeat { get; set; } = AlarmRepeat.Once;
     // The weekday a Weekly alarm recurs on (set to the day it first rings). Null for non-weekly repeats.
     public int? RepeatAnchorDayOfWeek { get; set; }
+    public DateTime? RepeatAnchorDate { get; set; }
+    public int RepeatWeekdayMask { get; set; }
+    public int RepeatIntervalDays { get; set; } = 1;
+    public DateTime? RepeatEndDate { get; set; }
     public DateTimeOffset? TargetAt { get; set; }
     public DateTimeOffset? RingStartedAt { get; set; }
     public DateTimeOffset? SnoozeUntil { get; set; }

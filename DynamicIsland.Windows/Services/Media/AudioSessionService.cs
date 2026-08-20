@@ -128,6 +128,7 @@ public sealed class AudioSessionService(LoggingService log) : IDisposable
                 ActiveAudioOutput = !systemMuted && (endpointPeak >= AudibleThreshold || audible > 0),
                 ActiveSessionCount = active,
                 AudibleSessionCount = audible,
+                OutputDeviceId = CoreAudioFactory.IdOf(endpointDevice),
                 OutputDeviceName = CoreAudioFactory.FriendlyNameOf(endpointDevice)
             };
         }

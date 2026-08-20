@@ -3,38 +3,45 @@ namespace DynamicIsland.Windows.Models;
 public enum ThemeMode { System, Light, Dark }
 public enum NotificationFilter { All, Allowlist, Blocklist }
 public enum IslandSize { Compact, Normal, Large }
+public enum IslandVisualMode { Apple, Stats }
 public enum AnimationIntensity { Reduced, Normal, Expressive }
 public enum PositionMode { TopCenter, TopLeft, Manual }
+public enum QuotePlacement { Off, Compact, Expanded, Both }
+public enum QuoteRotation { Static, EveryExpand, EveryMinute, Every5Minutes, Every15Minutes, Every30Minutes, EveryHour }
 
 public sealed class AppSettings
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public bool LaunchOnStartup { get; set; }
     public bool AlwaysOnTop { get; set; } = true;
     public bool LockPosition { get; set; }
     public bool ClickThroughWhenCompact { get; set; }
     public bool ExpandOnHover { get; set; } = true;
     public bool ShowMedia { get; set; } = true;
-    public bool ShowAlbumArtInCompact { get; set; }
+    public bool ShowAlbumArtInCompact { get; set; } = true;
     public int AlbumArtScale { get; set; } = 100; // % size of the album art / icon (70–130)
     public int ExpandedAlbumArtSize { get; set; } = 100; // % size of the album art in the expanded view (40–160)
-    public int AlbumCornerRadius { get; set; } = 30; // corner radius as % of side: 0 = square, 30 = squircle, 50 = circle
+    public int AlbumCornerRadius { get; set; } = 24; // 0 = square; 24 is the intended Apple-like squircle limit
     public bool ShowMediaProgressRing { get; set; } = true;
     public bool ShowSongTimeRemaining { get; set; } = true;
     public bool ScrollLongTitles { get; set; } = true; // marquee long media titles that don't fit
     public bool ShowTimerRing { get; set; } = true;
-    public bool LiquidGlass { get; set; }
-    public int GlassOpacity { get; set; } = 65; // % fill opacity when Liquid glass is on (lower = more transparent)
     public bool ShowVolume { get; set; } = true;
     public bool ShowBattery { get; set; } = true;
     public bool ShowClock { get; set; } = true;
     public bool ShowDate { get; set; } = true;
     public bool ShowTimerAlarm { get; set; } = true;
+    public bool FocusModeEnabled { get; set; }
+    public bool NotificationHistoryEnabled { get; set; } = true;
     public bool Use24HourClock { get; set; }
     public bool ShowSeconds { get; set; }
     public ThemeMode Theme { get; set; } = ThemeMode.System;
     public IslandSize IslandSize { get; set; } = IslandSize.Normal;
+    public IslandVisualMode IslandVisualMode { get; set; } = IslandVisualMode.Apple;
     public int IslandCornerRadius { get; set; } = 22; // outer island corner radius in DIP (0–48)
+    // Direct compact-island dimensions in DIPs. These supplement the simple size presets.
+    public int IslandWidth { get; set; } = 230;
+    public int IslandHeight { get; set; } = 62;
     public AnimationIntensity AnimationIntensity { get; set; } = AnimationIntensity.Normal;
     public PositionMode DefaultPosition { get; set; } = PositionMode.TopCenter;
     public string SelectedMediaApp { get; set; } = "Automatic";
@@ -71,8 +78,7 @@ public sealed class AppSettings
     public bool UseCustomColors { get; set; }
     public string AccentColorHex { get; set; } = "#5AA7FF";
     public string TextColorHex { get; set; } = "";   // empty = follow theme
-    public string GlassColorHex { get; set; } = "";  // empty = default grey
-    public bool AdaptiveAccent { get; set; }         // pull accent from album art
+    public bool AdaptiveAccent { get; set; } = true; // pull accent from album art
     public string FontFamilyName { get; set; } = "Segoe UI Variable Text";
 
     // ===== Behaviour =====
@@ -118,6 +124,12 @@ public sealed class AppSettings
     public string CountdownLabel { get; set; } = "";
     public string CountdownDate { get; set; } = ""; // yyyy-MM-dd
 
+    // ===== Quotes =====
+    public QuotePlacement QuotePlacement { get; set; } = QuotePlacement.Off;
+    public QuoteRotation QuoteRotation { get; set; } = QuoteRotation.Static;
+    public string QuotesText { get; set; } = ""; // one quote per line, optional "| author" suffix
+    public int QuoteSize { get; set; } = 100;
+
     // ===== Stocks / crypto (csv of symbols, e.g. AAPL,MSFT,BTC-USD) =====
     public bool ShowStocks { get; set; }
     public string StockSymbols { get; set; } = "";
@@ -145,9 +157,6 @@ public sealed class AppSettings
     // ===== Volume warning =====
     public bool VolumeWarningEnabled { get; set; } = true;
     public int VolumeWarningThreshold { get; set; } = 60;
-
-    // ===== Theme skin (last applied, for reference) =====
-    public string ThemeSkin { get; set; } = "";
 
     public AppSettings Clone() => (AppSettings)MemberwiseClone();
 

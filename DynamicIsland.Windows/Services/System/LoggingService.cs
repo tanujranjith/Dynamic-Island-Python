@@ -22,7 +22,7 @@ public sealed class LoggingService
     public void Info(string message) => Write("INFO", message);
     public void Debug(string message) { if (_debugEnabled) Write("DEBUG", message); }
     public void Error(string message, Exception? exception = null) =>
-        Write("ERROR", exception is null ? message : $"{message}: {exception.GetType().Name}: {exception.Message}");
+        Write("ERROR", exception is null ? message : $"{message}: {exception}");
 
     private void Write(string level, string message)
     {

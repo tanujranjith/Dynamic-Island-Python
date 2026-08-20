@@ -12,7 +12,11 @@ internal static class NativeMethods
     public const uint SwpNoZOrder = 0x0004;
     public const uint SwpNoSize = 0x0001;
     public const uint SwpNoMove = 0x0002;
+    public const int WmHotKey = 0x0312;
+    public const uint HotkeyModifierAlt = 0x0001;
+    public const uint HotkeyModifierControl = 0x0002;
     public static readonly nint HwndTopmost = new(-1); // HWND_TOPMOST
+    public static readonly nint HwndNoTopmost = new(-2); // HWND_NOTOPMOST
     public const int DwmwaWindowCornerPreference = 33;
     public const int DwmwaSystemBackdropType = 38;
     public const int WcaAccentPolicy = 19;
@@ -36,6 +40,14 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool RegisterHotKey(nint hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool UnregisterHotKey(nint hWnd, int id);
 
     [DllImport("user32.dll")]
     public static extern nint GetShellWindow();

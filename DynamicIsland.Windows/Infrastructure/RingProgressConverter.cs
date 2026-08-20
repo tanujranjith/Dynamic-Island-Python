@@ -26,6 +26,20 @@ public sealed class RingProgressConverter : IMultiValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>Maps a 0–100 percentage onto an available layout width.</summary>
+public sealed class PercentageWidthConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Length < 2 || values[0] is not double percent || values[1] is not double width)
+            return 0d;
+        return Math.Clamp(percent / 100d, 0d, 1d) * Math.Max(0d, width);
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>Visible when the bound value (string) equals the ConverterParameter; else Collapsed.</summary>
 public sealed class StringEqualsToVisibilityConverter : IValueConverter
 {
