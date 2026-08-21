@@ -108,12 +108,12 @@ public sealed record QSessionSnapshot(
     string? Error,
     QScreenContext? Context,
     string ProviderId,
-    string Model) : EventArgs;
+    string Model);
 
 public interface IQSessionController : IDisposable
 {
     QSessionSnapshot Snapshot { get; }
-    event EventHandler<QSessionSnapshot>? Changed;
+    event Action<QSessionSnapshot>? Changed;
     Task BeginAsync(QMode mode, string providerId, string model, QScreenContext? context, CancellationToken cancellationToken = default);
     Task SubmitAsync(string prompt, QMode mode, string providerId, string model, string? credential, string? baseUrl,
         bool includeImage, Func<CancellationToken, Task<QScreenContext?>>? recapture = null,

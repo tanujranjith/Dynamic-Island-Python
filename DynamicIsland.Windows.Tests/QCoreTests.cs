@@ -1,4 +1,5 @@
 using DynamicIsland.Q.Core;
+using Xunit;
 
 namespace DynamicIsland.Windows.Tests;
 

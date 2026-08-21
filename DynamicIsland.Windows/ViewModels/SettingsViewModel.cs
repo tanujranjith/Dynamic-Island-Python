@@ -173,6 +173,7 @@ public sealed class SettingsViewModel : ObservableObject
     public bool ShowSeconds { get => _settings.ShowSeconds; set => Set(v => _settings.ShowSeconds = v, value); }
     public bool DebugOverlay { get => _settings.DebugOverlay; set => Set(v => _settings.DebugOverlay = v, value); }
     public bool DebugLogging { get => _settings.DebugLogging; set => Set(v => _settings.DebugLogging = v, value); }
+    public bool ShowIslandInScreenshots { get => _settings.ShowIslandInScreenshots; set { Set(v => _settings.ShowIslandInScreenshots = v, value); _apply(); } }
     public bool ShowInAltTab { get => _settings.ShowInAltTab; set => Set(v => _settings.ShowInAltTab = v, value); }
     public ThemeMode Theme { get => _settings.Theme; set => Set(v => _settings.Theme = v, value); }
     public IslandVisualMode IslandVisualMode { get => _settings.IslandVisualMode; set => Set(v => _settings.IslandVisualMode = v, value); }
@@ -387,8 +388,8 @@ public sealed class SettingsViewModel : ObservableObject
     public string QSelectedModel { get => _settings.QSelectedModel; set { Set(v => _settings.QSelectedModel = v ?? "gpt-4o-mini", value); _apply(); } }
     public string QApiKey { get => _qSecrets.Get(_settings.QSelectedProvider) ?? ""; set { _qSecrets.Set(_settings.QSelectedProvider, value); RaisePropertyChanged(); } }
     public Array QProviderOptions => new[] { "openai", "anthropic", "gemini", "groq", "xai", "openrouter", "deepseek", "ollama" };
-    public Array QCaptureModeOptions => Enum.GetValues<QCaptureMode>();
-    public QCaptureMode QCaptureMode { get => _settings.QCaptureMode; set { Set(v => _settings.QCaptureMode = v, value); _apply(); } }
+    public Array QCaptureModeOptions => Enum.GetValues<Models.QCaptureMode>();
+    public Models.QCaptureMode QCaptureMode { get => _settings.QCaptureMode; set { Set(v => _settings.QCaptureMode = v, value); _apply(); } }
     public bool QIncludeScreenImage { get => _settings.QIncludeScreenImage; set { Set(v => _settings.QIncludeScreenImage = v, value); _apply(); } }
     public string QOllamaBaseUrl { get => _settings.QOllamaBaseUrl; set { Set(v => _settings.QOllamaBaseUrl = v ?? "http://localhost:11434/v1", value); _apply(); } }
     public int QTimeoutSeconds { get => _settings.QTimeoutSeconds; set => SetSize(v => _settings.QTimeoutSeconds = v, value, 10, 300); }

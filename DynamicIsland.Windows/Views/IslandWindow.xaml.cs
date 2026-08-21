@@ -34,6 +34,7 @@ public partial class IslandWindow : Window
     private bool _suppressExpandedAnimation;
     private bool _liveTimerVisible;
     private bool _lastIsStatsStyle;
+    private Storyboard? _qThinkingAnimation;
 
     private const double TimerPanelWidth = 1000d;
     private const double TimerPanelHeight = 520d;
@@ -74,7 +75,7 @@ public partial class IslandWindow : Window
         {
             _sourceReady = true;
             _position.ApplyWindowStyles(this, _viewModel.Settings, compact: true);
-            Interop.NativeMethods.SetWindowDisplayAffinity(new System.Windows.Interop.WindowInteropHelper(this).Handle, Interop.NativeMethods.WdaExcludeFromCapture);
+            ApplyCaptureAffinity();
             ApplyLayout(animate: false);
             ApplyFrost();
         };
@@ -100,15 +101,32 @@ public partial class IslandWindow : Window
             _timerViewModel.PropertyChanged -= TimerViewModelOnPropertyChanged;
             _fullscreenTimer.Stop();
             _idleTimer.Stop();
+            try { _qThinkingAnimation?.Remove(this); } catch { }
         };
     }
 
     public void ApplySettings()
     {
         _position.ApplyWindowStyles(this, _viewModel.Settings, _viewModel.IsCompact);
+        ApplyCaptureAffinity();
         ApplyLayout(animate: false);
         ApplyFrost();
         EnsureHealthy();
+    }
+
+    private void ApplyCaptureAffinity()
+    {
+        if (!_sourceReady) return;
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == nint.Zero) return;
+
+        // Keep the Island visible in normal screenshots during the Q stabilization period. The
+        // Q capture service still targets the remembered foreground window and never relies on
+        // this affinity flag for context isolation.
+        var affinity = _viewModel.Settings.ShowIslandInScreenshots
+            ? Interop.NativeMethods.WdaNone
+            : Interop.NativeMethods.WdaExcludeFromCapture;
+        Interop.NativeMethods.SetWindowDisplayAffinity(hwnd, affinity);
     }
 
     // Settings has its own live preview. The real transparent overlay must not cover it.
@@ -178,8 +196,12 @@ public partial class IslandWindow : Window
         {
             if (_timerPanelOpen) return;
             ApplyVisualMode();
-            if (_viewModel.IsExpanded) UpdateAutoGrow();
+            if (_viewModel.IsExpanded) ApplyLayout(animate: false);
             if (_viewModel.ShowQSurface) Dispatcher.BeginInvoke(() => { QPromptBox.Focus(); Keyboard.Focus(QPromptBox); });
+        }
+        else if (e.PropertyName == nameof(IslandViewModel.QState) || e.PropertyName == nameof(IslandViewModel.QShowInlineThinking))
+        {
+            UpdateQThinkingAnimation();
         }
         else if (e.PropertyName == nameof(IslandViewModel.BannerSeq))
         {
@@ -235,6 +257,7 @@ public partial class IslandWindow : Window
     // Quotes add a footer only when enabled. Keep the original canvas otherwise, because a transparent
     // WPF window has to redraw its whole canvas while the island animates.
     private const double CanvasW = 1200d, BaseCanvasH = 330d, QuoteFooterHeight = 56d;
+    private const double QSurfaceExtraHeight = 220d;
     // The Stats dashboard is taller than the Apple activity deck (album art plus three
     // stacked tiles instead of one compact row). Reserve this space even when the user
     // turns auto-grow off so the bottom of the dashboard can never be clipped.
@@ -244,6 +267,7 @@ public partial class IslandWindow : Window
         var quoteSpace = _viewModel.ShowQuoteInExpanded ? QuoteFooterHeight : 0d;
         var timerSpace = _liveTimerVisible ? LiveTimerExtraHeight : 0d;
         var statsSpace = _viewModel.IsStatsStyle ? StatsDashboardExtraHeight : 0d;
+        var qSpace = _viewModel.ShowQSurface ? QSurfaceExtraHeight : 0d;
         // Compact dimensions are user-controlled and deliberately independent from the expanded
         // canvas.  Previously this method ignored IslandWidth/IslandHeight and used a preset for
         // both states, so adjusting the mini island could distort the expanded layout.
@@ -254,13 +278,13 @@ public partial class IslandWindow : Window
             // The media header, transport controls, and the live-activity cards need 260px+
             // after their outer margins.  The smaller values clipped the entire bottom row,
             // making RAM/network/battery appear to have disappeared.
-            IslandSize.Compact => (820d, 264d + quoteSpace + timerSpace + statsSpace),
-            IslandSize.Large => (1000d, 322d + quoteSpace + timerSpace + statsSpace),
-            _ => (900d, 292d + quoteSpace + timerSpace + statsSpace)
+            IslandSize.Compact => (820d, 264d + quoteSpace + timerSpace + statsSpace + qSpace),
+            IslandSize.Large => (1000d, 322d + quoteSpace + timerSpace + statsSpace + qSpace),
+            _ => (900d, 292d + quoteSpace + timerSpace + statsSpace + qSpace)
         };
         // The transparent HWND must be at least as tall as the pill, otherwise WPF clips
         // a correctly measured Stats dashboard at the canvas boundary.
-        var windowHeight = Math.Max(BaseCanvasH + quoteSpace + timerSpace, expandedHeight + 16d);
+        var windowHeight = Math.Max(BaseCanvasH + quoteSpace + timerSpace, expandedHeight + 40d);
         return (compactWidth, compactHeight, expandedWidth, expandedHeight, CanvasW, windowHeight);
     }
 
@@ -269,6 +293,10 @@ public partial class IslandWindow : Window
     {
         var m = Metrics();
         if (!_viewModel.Settings.AutoGrowPill) return (m.eW, m.eH);
+        // Q has a fixed interaction frame. Letting the answer text determine the whole pill height
+        // pushes the composer and footer below the shell after a long response. The response card
+        // owns a ScrollViewer, so keep the prompt/actions/footer pinned in the reserved Q height.
+        if (_viewModel.ShowQSurface) return (m.eW, m.eH);
         try
         {
             // Measure the content unconstrained so trimmed/async text reports its true natural size.
@@ -279,7 +307,7 @@ public partial class IslandWindow : Window
             content.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
             var d = content.DesiredSize;
             var w = Math.Clamp(d.Width + 2, m.eW, CanvasW - 24);
-            var h = Math.Clamp(d.Height + 2, m.eH, m.winH - 24);
+            var h = Math.Clamp(d.Height + 2, m.eH, Math.Max(m.eH, m.winH - 24));
             return (w, h);
         }
         catch { return (m.eW, m.eH); }
@@ -338,6 +366,13 @@ public partial class IslandWindow : Window
         var apple = _viewModel.IsAppleStyle;
         var expanded = _viewModel.IsExpanded;
         var q = _viewModel.ShowQSurface;
+        ExpandedContent.Margin = q ? new Thickness(0) : new Thickness(28, 22, 28, 22);
+        // Give Q its own bounded layout viewport. Without an explicit height, the parent Grid can
+        // arrange the response card at its natural text height and clip the prompt/footer below it.
+        var qHeight = q ? Metrics().eH : double.NaN;
+        QContent.Height = qHeight;
+        QContent.MaxHeight = q ? qHeight : double.PositiveInfinity;
+        QContent.VerticalAlignment = q ? VerticalAlignment.Top : VerticalAlignment.Stretch;
         SetModeContent(CompactContent, apple && !expanded && !_timerPanelOpen);
         // The full Apple activity deck is the stable shared expanded surface. The compact Stats
         // layout still provides the dense glanceable alternative, while this prevents Stats mode
@@ -345,7 +380,10 @@ public partial class IslandWindow : Window
         // TimerPanelContent is intentionally hosted inside the shared expanded surface so it uses
         // the same clipped island material. Keep that parent alive while the timer panel is open;
         // the timer's opaque black layer covers the media deck underneath.
-        SetModeContent(ExpandedContent, (expanded || _timerPanelOpen) && !q);
+        // QContent and TimerPanelContent are overlays hosted inside ExpandedContent. Keep the
+        // shared expanded parent mounted while either overlay is active; collapsing the parent
+        // makes the Island render as a black shell even though the child overlay is visible.
+        SetModeContent(ExpandedContent, expanded || _timerPanelOpen);
         SetModeContent(QContent, expanded && q);
         SetModeContent(StatsCompactContent, !apple && !expanded && !_timerPanelOpen);
         SetModeContent(StatsExpandedContent, false);
@@ -881,6 +919,27 @@ public partial class IslandWindow : Window
     private void QAllow_Click(object sender, RoutedEventArgs e) => _viewModel.AcceptQDisclosure();
     private void QCopy_Click(object sender, RoutedEventArgs e) => _viewModel.CopyQResponse();
     private void QStop_Click(object sender, RoutedEventArgs e) => _viewModel.CancelQ();
+    private async void QQuickAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { Tag: string prompt } || string.IsNullOrWhiteSpace(prompt)) return;
+        _viewModel.SetQMode(DynamicIsland.Q.Core.QMode.Ask);
+        QPromptBox.Text = prompt;
+        await SubmitQPromptAsync();
+    }
+
+    private void UpdateQThinkingAnimation()
+    {
+        if (!_sourceReady) return;
+        try
+        {
+            _qThinkingAnimation ??= (Storyboard)Resources["QThinkingAnimation"];
+            if (_viewModel.QShowInlineThinking)
+                _qThinkingAnimation.Begin(this, isControllable: true);
+            else
+                _qThinkingAnimation.Remove(this);
+        }
+        catch { }
+    }
     private void QNew_Click(object sender, RoutedEventArgs e)
     {
         _viewModel.ClearQ();
@@ -894,7 +953,7 @@ public partial class IslandWindow : Window
         QPromptBox.Focus();
     }
     private async void QSend_Click(object sender, RoutedEventArgs e) => await SubmitQPromptAsync();
-    private async void QPromptBox_KeyDown(object sender, KeyEventArgs e)
+    private async void QPromptBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift)
         {

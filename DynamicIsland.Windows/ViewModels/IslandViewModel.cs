@@ -180,6 +180,26 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public QMode QCurrentMode => _qSnapshot.Mode;
     public string QStatusText => _qSnapshot.Status;
     public string QResponse => _qSnapshot.Response;
+    public string QPromptText => _qSnapshot.Prompt;
+    public string QPromptDisplay => string.IsNullOrWhiteSpace(QPromptText) ? "Ask Q about what you’re looking at." : QPromptText;
+    public bool QShowInlineThinking => QState is QRunState.Capturing or QRunState.Thinking or QRunState.Streaming;
+    public string QInlineStatusText => QState switch
+    {
+        QRunState.Capturing => "Reading…",
+        QRunState.Thinking => "Thinking…",
+        QRunState.Streaming => "Responding…",
+        _ => string.Empty
+    };
+    public string QResponseDisplay => string.IsNullOrWhiteSpace(QResponse)
+        ? QState switch
+        {
+            QRunState.Capturing => string.Empty,
+            QRunState.Listening => "Listening for your question…",
+            QRunState.Thinking or QRunState.Streaming => string.Empty,
+            QRunState.Error when !string.IsNullOrWhiteSpace(QError) => QError,
+            _ => "Ask Q about what you’re looking at."
+        }
+        : QResponse;
     public string QError => _qSnapshot.Error ?? string.Empty;
     public string QSourceText => _qSnapshot.Context is { } context
         ? string.IsNullOrWhiteSpace(context.ProcessName) ? "Active window" : context.ProcessName
@@ -724,8 +744,25 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         if (!Settings.QEnabled) return;
         if (targetWindow != nint.Zero) _qTargetWindow = targetWindow;
+        _qSession.Cancel();
         IsExpanded = true;
-        OnUi(() => RaiseQProperties());
+        OnUi(() =>
+        {
+            // Make Q the active presentation before capture/OCR starts. Capture can take a
+            // noticeable amount of time or return no context on protected/minimized windows;
+            // the user should still see a usable Q surface instead of an empty black shell.
+            _qSnapshot = new QSessionSnapshot(
+                QRunState.Capturing,
+                QMode.Ask,
+                string.Empty,
+                string.Empty,
+                "Reading active window…",
+                null,
+                null,
+                Settings.QSelectedProvider,
+                Settings.QSelectedModel);
+            RaiseQProperties();
+        });
         try
         {
             var context = await _qScreen.CaptureAsync(_qTargetWindow, Settings.QCaptureMode == Models.QCaptureMode.ActiveMonitor ? DynamicIsland.Q.Core.QCaptureMode.ActiveMonitor : DynamicIsland.Q.Core.QCaptureMode.ActiveWindow, CancellationToken.None).ConfigureAwait(false);
@@ -782,15 +819,17 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public void ClearQ() { _qSession.Clear(); IsExpanded = false; }
     public void CopyQResponse() { if (!string.IsNullOrWhiteSpace(QResponse)) System.Windows.Clipboard.SetText(QResponse); }
 
-    private void OnQChanged(object? sender, QSessionSnapshot snapshot) => OnUi(() =>
+    private void OnQChanged(QSessionSnapshot snapshot) => OnUi(() =>
     {
         _qSnapshot = snapshot;
         RaiseQProperties();
     });
 
-    private void RaiseQProperties() => RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QResponse), nameof(QError),
+    private void RaiseQProperties() => RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QResponse), nameof(QResponseDisplay), nameof(QPromptText), nameof(QPromptDisplay), nameof(QInlineStatusText), nameof(QShowInlineThinking), nameof(QError),
         nameof(QSourceText), nameof(QCompactText), nameof(IsQActive), nameof(ShowQSurface), nameof(QIsAsk), nameof(QIsSay), nameof(QIsListening),
-        nameof(QNeedsConsent), nameof(QSpeechAvailable), nameof(QSelectedProvider), nameof(ShowCompactMediaContent), nameof(ShowCompactQContent));
+        nameof(QNeedsConsent), nameof(QSpeechAvailable), nameof(QSelectedProvider), nameof(ShowCompactMediaContent), nameof(ShowCompactQContent),
+        nameof(PrimaryActivity), nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText), nameof(ShowCompactArt),
+        nameof(ShowCompactMediaRing), nameof(ShowCompactTimerRing), nameof(ShowCompactRingTrack));
 
     private void OnMediaChanged(object? sender, MediaInfo value) => OnUi(() =>
     {

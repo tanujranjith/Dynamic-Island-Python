@@ -20,6 +20,7 @@ internal static class NativeMethods
     public const int DwmwaWindowCornerPreference = 33;
     public const int DwmwaSystemBackdropType = 38;
     public const int WcaAccentPolicy = 19;
+    public const uint WdaNone = 0x00000000;
     public const uint WdaExcludeFromCapture = 0x00000011;
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]

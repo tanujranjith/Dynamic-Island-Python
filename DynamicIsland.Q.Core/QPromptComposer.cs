@@ -1,0 +1,34 @@
+namespace DynamicIsland.Q.Core;
+
+public static class QPromptComposer
+{
+    public static string SystemPrompt(QMode mode) => mode switch
+    {
+        QMode.Say => "You are Q in Say mode. Use the visible context to suggest concise, natural first-person wording the user can say next. Do not claim actions were taken. Return only the suggested wording unless a brief clarification is essential.",
+        _ => "You are Q in Ask mode. Answer, explain, solve, or analyze the user's request using the visible context when relevant. Be direct, distinguish visible facts from uncertainty, and do not invent details that are not present.",
+    };
+
+    public static string ContextText(QScreenContext? context)
+    {
+        if (context is null)
+            return "No active-window context was captured.";
+
+        var ocr = string.IsNullOrWhiteSpace(context.OcrText)
+            ? "(No OCR text was detected.)"
+            : context.OcrText.Trim();
+
+        return $"Context from the active window ({context.ProcessName}, {context.WindowTitle}, {context.Width}x{context.Height}):\n{ocr}";
+    }
+
+    public static IReadOnlyList<QMessage> BuildMessages(QRequest request)
+    {
+        var messages = new List<QMessage>
+        {
+            new("system", SystemPrompt(request.Mode)),
+        };
+
+        messages.AddRange(request.History);
+        messages.Add(new("user", $"{ContextText(request.ScreenContext)}\n\nUser request:\n{request.Prompt}"));
+        return messages;
+    }
+}

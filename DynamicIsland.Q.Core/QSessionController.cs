@@ -8,7 +8,7 @@ public sealed class QSessionController(IQProviderRegistry providers) : IQSession
     private QSessionSnapshot _snapshot = new(QRunState.Idle, QMode.Ask, string.Empty, string.Empty, "Ready", null, null, "", "");
 
     public QSessionSnapshot Snapshot { get { lock (_gate) return _snapshot; } }
-    public event EventHandler<QSessionSnapshot>? Changed;
+    public event Action<QSessionSnapshot>? Changed;
 
     public Task BeginAsync(QMode mode, string providerId, string model, QScreenContext? context, CancellationToken cancellationToken = default)
     {
@@ -111,7 +111,7 @@ public sealed class QSessionController(IQProviderRegistry providers) : IQSession
     private void Publish(QSessionSnapshot snapshot)
     {
         lock (_gate) _snapshot = snapshot;
-        Changed?.Invoke(this, snapshot);
+        Changed?.Invoke(snapshot);
     }
 
     public void Dispose() => Clear();

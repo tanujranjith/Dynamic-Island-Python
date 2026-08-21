@@ -43,6 +43,11 @@ public abstract class HttpQProvider(HttpClient? httpClient = null) : IQProvider
 {
     protected readonly HttpClient Http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
     public abstract QProviderInfo Info { get; }
+    public abstract IAsyncEnumerable<QStreamEvent> StreamAsync(
+        QRequest request,
+        string? credential,
+        string? baseUrl,
+        CancellationToken cancellationToken);
 
     public virtual async Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken)
     {

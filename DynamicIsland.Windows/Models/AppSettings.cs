@@ -48,6 +48,8 @@ public sealed class AppSettings
     public string SelectedMediaApp { get; set; } = "Automatic";
     public bool DebugOverlay { get; set; }
     public bool DebugLogging { get; set; }
+    // Temporary QA default: keep the Island visible in screenshots so visual bugs can be reported.
+    public bool ShowIslandInScreenshots { get; set; } = true;
     public bool ShowInAltTab { get; set; }
     public int CollapseDelayMilliseconds { get; set; } = 400;
     public int TopOffset { get; set; } = 2; // gap (DIP) from the top of the screen to the pill
