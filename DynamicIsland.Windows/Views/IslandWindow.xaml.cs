@@ -31,6 +31,7 @@ public partial class IslandWindow : Window
     private bool _timerPanelOpen;
     private bool _suppressExpandedAnimation;
     private bool _liveTimerVisible;
+    private bool _lastIsStatsStyle;
 
     private const double TimerPanelWidth = 1000d;
     private const double TimerPanelHeight = 520d;
@@ -50,6 +51,7 @@ public partial class IslandWindow : Window
         LiveTimerStrip.DataContext = timerViewModel;
         _liveTimerVisible = timerViewModel.ShowLiveTimer;
         LiveTimerStrip.Visibility = _liveTimerVisible ? Visibility.Visible : Visibility.Collapsed;
+        _lastIsStatsStyle = viewModel.IsStatsStyle;
         _position = position;
         _settingsService = settingsService;
         _log = log;
@@ -146,12 +148,26 @@ public partial class IslandWindow : Window
             _position.ApplyWindowStyles(this, _viewModel.Settings, _viewModel.IsCompact);
             AnimatePill(animate: true);
         }
-        else if (e.PropertyName == nameof(IslandViewModel.IsStatsStyle))
+        else if (e.PropertyName == nameof(IslandViewModel.IsStatsStyle) || e.PropertyName == nameof(IslandViewModel.IsAppleStyle))
         {
-            // Visual mode changes alter both the active content and its minimum safe height.
-            // Re-run the real layout path immediately so Stats never inherits Apple dimensions.
-            if (_viewModel.IsExpanded && !_timerPanelOpen)
+            // Hardened: only re-layout when the actual visual mode changed. Spurious
+            // PropertyChanged("IsStatsStyle") from unrelated media/battery/audio updates
+            // must NOT restart the pill animation (previously caused visible flicker).
+            var isStats = _viewModel.IsStatsStyle;
+            if (isStats == _lastIsStatsStyle) return;
+            _lastIsStatsStyle = isStats;
+            if (_timerPanelOpen) return;
+            if (_viewModel.IsExpanded)
+            {
+                // Visual mode changes alter both the active content and its minimum safe height.
+                // Re-run the real layout path immediately so Stats never inherits Apple dimensions.
                 ApplyLayout(animate: true);
+            }
+            else
+            {
+                // Compact visual mode must update immediately without a full morph.
+                ApplyVisualMode();
+            }
         }
         else if (e.PropertyName == nameof(IslandViewModel.BannerSeq))
         {

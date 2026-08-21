@@ -137,7 +137,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         {
             Settings.FocusModeEnabled = !Settings.FocusModeEnabled;
             _ = PersistSettingsAsync();
-            RaiseComputed();
+            RaiseFocusModeProperties();
         });
         OpenNotificationHistoryCommand = new RelayCommand(RefreshNotificationHistory);
         ClearNotificationHistoryCommand = new RelayCommand(() =>
@@ -165,7 +165,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public MediaInfo Media { get => _media; private set { if (SetProperty(ref _media, value)) UpdateArtwork(value.Artwork); } }
     public AudioState Audio { get => _audio; private set => SetProperty(ref _audio, value); }
     public BatteryState Battery { get => _battery; private set => SetProperty(ref _battery, value); }
-    public bool IsExpanded { get => _isExpanded; set { if (SetProperty(ref _isExpanded, value)) { if (value && Settings.QuoteRotation == QuoteRotation.EveryExpand) AdvanceQuote(); UpdatePreviewRetention(); RaiseComputed(); } } }
+    public bool IsExpanded { get => _isExpanded; set { if (SetProperty(ref _isExpanded, value)) { if (value && Settings.QuoteRotation == QuoteRotation.EveryExpand) AdvanceQuote(); UpdatePreviewRetention(); RaiseExpansionProperties(); } } }
     public bool IsCompact => !IsExpanded;
     // When a settings window is open we pin the island expanded so size/appearance changes are visible live.
     public bool KeepExpanded { get => _keepExpanded; set { if (SetProperty(ref _keepExpanded, value)) { RaisePropertyChanged(nameof(PinExpanded)); if (value) IsExpanded = true; } } }
@@ -209,18 +209,20 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     // crowd out the title and status lane on small custom heights.
     public double CompactAlbumSize => Math.Clamp((Settings.IslandHeight - 12) * AlbumScale, 36, 52);
     public double ExpandedAlbumSize => Math.Clamp(120 * ExpandedAlbumScale, 48, 140);
-    public double PreviewCompactAlbumSize => Math.Clamp(46 * AlbumScale, 34, 60);
-    public double PreviewExpandedAlbumSize => Math.Clamp(66 * ExpandedAlbumScale, 32, 90);
+    // Preview sizes must match real island sizes exactly, otherwise the settings preview truncates
+    // titles differently from the live pill (e.g. "Outside T..." in preview vs "Outs..." live).
+    public double PreviewCompactAlbumSize => CompactAlbumSize;
+    public double PreviewExpandedAlbumSize => ExpandedAlbumSize;
     // Album / icon corner radius deliberately stops at a squircle, never a circle.
     public double AlbumRadiusFraction => Math.Clamp(Settings.AlbumCornerRadius, 0, 30) / 100.0;
     public double CompactAlbumRadius => (CompactAlbumSize / 2) * AlbumRadiusFraction;
     public double ExpandedAlbumRadius => (ExpandedAlbumSize / 2) * AlbumRadiusFraction;
-    public double PreviewCompactAlbumRadius => (PreviewCompactAlbumSize / 2) * AlbumRadiusFraction;
-    public double PreviewExpandedAlbumRadius => (PreviewExpandedAlbumSize / 2) * AlbumRadiusFraction;
+    public double PreviewCompactAlbumRadius => CompactAlbumRadius;
+    public double PreviewExpandedAlbumRadius => ExpandedAlbumRadius;
     public CornerRadius CompactIconCorner => new(CompactAlbumRadius);
     public CornerRadius ExpandedIconCorner => new(ExpandedAlbumRadius);
-    public CornerRadius PreviewCompactIconCorner => new(PreviewCompactAlbumRadius);
-    public CornerRadius PreviewExpandedIconCorner => new(PreviewExpandedAlbumRadius);
+    public CornerRadius PreviewCompactIconCorner => CompactIconCorner;
+    public CornerRadius PreviewExpandedIconCorner => ExpandedIconCorner;
     public Geometry CompactRingGeometry => RoundedSquare(32, 32 * AlbumRadiusFraction);
     public Geometry ExpandedRingGeometry => RoundedSquare(66, 66 * AlbumRadiusFraction);
     public double CompactRingPerimeterUnits => RoundedSquarePerimeter(32, 32 * AlbumRadiusFraction) / 2.5;
@@ -664,7 +666,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         if (Settings.AlwaysExpanded) IsExpanded = true;
         UpdateCachedSettings();
         UpdatePreviewRetention();
-        RaiseComputed();
+        RaiseSettingsChanged();
         RaisePropertyChanged(nameof(PinExpanded));
         RaisePropertyChanged(nameof(UiFontFamily));
     }
@@ -673,9 +675,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         var previous = Media;
         Media = value;
-        if (MediaPresentationChanged(previous, value))
+        if (Infrastructure.MediaPresentation.HasPresentationChanged(previous, value))
         {
-            RaiseComputed();
+            RaiseMediaPresentationChanged();
             return;
         }
 
@@ -684,21 +686,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseMany(nameof(MediaProgress), nameof(MediaElapsedText), nameof(MediaTimeRemaining),
             nameof(MediaTrailingTimeText));
     });
-
-    private static bool MediaPresentationChanged(MediaInfo previous, MediaInfo current) =>
-        !string.Equals(previous.Title, current.Title, StringComparison.Ordinal) ||
-        !string.Equals(previous.Artist, current.Artist, StringComparison.Ordinal) ||
-        !string.Equals(previous.Album, current.Album, StringComparison.Ordinal) ||
-        !string.Equals(previous.SourceAppId, current.SourceAppId, StringComparison.Ordinal) ||
-        !string.Equals(previous.SourceAppName, current.SourceAppName, StringComparison.Ordinal) ||
-        previous.PlaybackState != current.PlaybackState ||
-        previous.CanPlayPause != current.CanPlayPause ||
-        previous.CanPrevious != current.CanPrevious ||
-        previous.CanNext != current.CanNext ||
-        previous.CanSeek != current.CanSeek ||
-        previous.Duration != current.Duration ||
-        previous.IsExplicit != current.IsExplicit ||
-        !ReferenceEquals(previous.Artwork, current.Artwork);
     private void OnAudioChanged(object? sender, AudioState value) => OnUi(() =>
     {
         var isAbove = Settings.VolumeWarningEnabled
@@ -709,7 +696,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _prevAboveVolumeThreshold = isAbove;
 
         Audio = value;
-        RaiseComputed();
+        RaiseAudioProperties();
 
         if (isAbove && !prevAbove && DateTimeOffset.Now >= _volumeWarnCooldownUntil)
             TriggerVolumeWarning(value.MasterVolumePercent);
@@ -719,7 +706,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         Vision = value;
         if (value.Availability != VisionAvailability.Running) ClearPreview();
         UpdatePreviewRetention();
-        RaiseComputed();
+        RaiseVisionProperties();
     });
 
     private void OnVisionFrame(object? sender, byte[] jpeg)
@@ -932,7 +919,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(CameraPreview));
         RaisePropertyChanged(nameof(ShowCameraPreview));
     }
-    private void OnBatteryChanged(object? sender, BatteryState value) => OnUi(() => { Battery = value; RaiseComputed(); });
+    private void OnBatteryChanged(object? sender, BatteryState value) => OnUi(() => { Battery = value; RaiseBatteryProperties(); });
     // Only the time strings change each second — re-raising everything (brushes/geometries) every tick
     // was needless CPU churn (which the system monitor then read back as inflated usage).
     private void OnClockTick(object? sender, DateTimeOffset value) => OnUi(() =>
@@ -952,64 +939,132 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private void OnSystemThemeChanged(object? sender, EventArgs e) => OnUi(() =>
     {
         IsDarkTheme = _themeService.IsDark(Settings.Theme);
-        RaiseComputed();
+        RaiseThemeProperties();
     });
 
-    private void RaiseComputed()
+    // Targeted media presentation update — only properties derived from media state.
+    // Structural/layout properties (IsStatsStyle, IsAppleStyle, IsCompact, PinExpanded, etc.)
+    // are intentionally excluded so a track change never triggers ApplyLayout/AnimatePill.
+    private void RaiseMediaPresentationChanged()
     {
-        foreach (var property in new[]
-        {
-            nameof(IsCompact), nameof(ShowMedia), nameof(ShowVolume), nameof(ShowBattery), nameof(IsCharging), nameof(IsPowerConnected),
-            nameof(FocusModeEnabled), nameof(FocusModeText), nameof(HasNotificationHistory), nameof(ShowEmptyNotificationHistory),
-            nameof(ShowBatteryLevel), nameof(ShowCompactChargingIndicator), nameof(ShowCompactSecondary), nameof(ShowClock),
-            nameof(ShowTimerAlarm), nameof(DebugOverlay), nameof(IsReducedMotion), nameof(IsPlaying), nameof(IsMuted),
-            nameof(IsAudioActive), nameof(ShowAudioStatusText), nameof(ShowDate),
-            nameof(IsAppleStyle), nameof(IsStatsStyle),
-            nameof(Vision), nameof(ShowVisionStatus), nameof(VisionStatusText), nameof(VisionDotBrush), nameof(VisionAlert),
-            nameof(CameraPreview), nameof(ShowCameraPreview), nameof(ShowVisionButton),
-            nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse),
-            nameof(InterfaceScaleFactor), nameof(ClockFontSize), nameof(DateFontSize), nameof(BatteryGlyphFontSize), nameof(BatteryTextFontSize),
-            nameof(ChargingGlyphFontSize), nameof(ChargingTextFontSize), nameof(CompactChargingTextFontSize),
-            nameof(MediaTitleFontSize), nameof(MediaArtistFontSize), nameof(VolumeFontSize), nameof(VisionTextFontSize),
-            nameof(CompactGlyphFontSize), nameof(CompactPrimaryFontSize), nameof(CompactSecondaryFontSize), nameof(CompactClockFontSize),
-            nameof(ExpandedMediaTitleFontSize), nameof(ExpandedMediaArtistFontSize),
-            nameof(MediaTitle), nameof(MediaArtist),
-            nameof(PlayPauseGlyph), nameof(MediaProgress), nameof(ShowMediaTimes), nameof(MediaElapsedText), nameof(MediaTotalText),
-            nameof(MediaTimeRemaining), nameof(MediaTrailingTimeText), nameof(ShowNowPlaying), nameof(ShowExplicitBadge), nameof(FavoriteGlyph),
+        RaiseMany(nameof(MediaTitle), nameof(MediaArtist), nameof(IsPlaying), nameof(PlayPauseGlyph),
+            nameof(MediaProgress), nameof(ShowMediaTimes), nameof(MediaElapsedText), nameof(MediaTotalText),
+            nameof(MediaTimeRemaining), nameof(MediaTrailingTimeText), nameof(ShowNowPlaying), nameof(ShowExplicitBadge),
             nameof(CanSeek), nameof(SeekBackTooltip), nameof(SeekForwardTooltip),
-            nameof(VolumeText), nameof(VolumeGlyph), nameof(OutputDeviceText), nameof(AudioStatusText),
-            nameof(ClockText), nameof(ClockTimeText), nameof(ClockAmPm), nameof(DateText), nameof(DateLongText),
-            nameof(BatteryText), nameof(ChargingText), nameof(BatteryGlyph), nameof(TimerText),
-            nameof(TimerProgress), nameof(TimerRemainingProgress), nameof(ShowTimerOrb), nameof(TimerOrbPerimeterUnits), nameof(AlarmText), nameof(CompactGlyph), nameof(CompactPrimaryText),
-            nameof(CompactSecondaryText), nameof(PrimaryActivity), nameof(Artwork), nameof(HasArtwork),
-            nameof(ShowCompactArt),
-            nameof(ShowCompactMediaRing), nameof(ShowCompactTimerRing), nameof(ShowCompactRingTrack), nameof(ShowExpandedMediaRing), nameof(ScrollTitles),
-            nameof(AlbumScale), nameof(ExpandedAlbumScale), nameof(PreviewIslandWidth), nameof(PreviewIslandHeight), nameof(CompactAlbumSize), nameof(ExpandedAlbumSize), nameof(PreviewCompactAlbumSize), nameof(PreviewExpandedAlbumSize),
-            nameof(CompactAlbumRadius), nameof(ExpandedAlbumRadius), nameof(PreviewCompactAlbumRadius), nameof(PreviewExpandedAlbumRadius),
-            nameof(CompactIconCorner), nameof(ExpandedIconCorner), nameof(PreviewCompactIconCorner), nameof(PreviewExpandedIconCorner),
-            nameof(CompactRingGeometry), nameof(ExpandedRingGeometry), nameof(CompactRingPerimeterUnits), nameof(ExpandedRingPerimeterUnits),
-            nameof(PrimaryTextBrush), nameof(SecondaryTextBrush), nameof(AccentTextBrush), nameof(PanelBrush),
-            nameof(PanelBorderBrush), nameof(AccentBrush), nameof(AccentSoftBrush), nameof(IslandSurfaceBrush), nameof(IslandCardBrush), nameof(IslandDividerBrush),
-            nameof(ShellControlBrush), nameof(ShellControlHoverBrush), nameof(ProgressFillBrush), nameof(ProgressTrackBrush), nameof(UiFontFamily),
-            nameof(ShowWeather), nameof(WeatherGlyph), nameof(WeatherTempText), nameof(WeatherDescText),
-            nameof(ShowSystemMonitor), nameof(ShowCompactRam), nameof(CpuText), nameof(RamText), nameof(NetText),
-            nameof(RamPercentValue), nameof(NetSparkline),
-            nameof(ShowCountdown), nameof(CountdownText), nameof(ShowWorldClocks), nameof(WorldClocks),
-            nameof(ShowQuotes), nameof(ShowQuoteInCompact), nameof(ShowQuoteInExpanded),
-            nameof(QuoteText), nameof(QuoteAuthor), nameof(QuoteAuthorDisplay), nameof(ShowQuoteAuthor),
-            nameof(QuoteTextFontSize), nameof(QuoteAuthorFontSize),
-            nameof(ShowStocks), nameof(Stocks), nameof(ShowNextMeeting), nameof(MeetingTitle), nameof(MeetingWhen), nameof(HasMeetingJoin),
-            nameof(ShowBatteryTime), nameof(BatteryTimeText), nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowNotification), nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq), nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
-            nameof(IslandCornerRadius), nameof(IslandInnerCornerRadius),
-            nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(PinExpanded),
-            nameof(MediaColumn), nameof(VolumeColumn), nameof(StatusColumn)
-        }) RaisePropertyChanged(property);
+            nameof(PrimaryActivity), nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText),
+            nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowExpandedMediaRing), nameof(ShowCompactRingTrack),
+            nameof(Artwork), nameof(HasArtwork), nameof(ShowMedia), nameof(ScrollTitles));
+        // Adaptive accent may have changed via UpdateArtwork; ensure brushes update in place.
+        if (Settings.AdaptiveAccent)
+            RaiseMany(nameof(AccentBrush), nameof(AccentSoftBrush), nameof(AccentTextBrush));
+        RaiseMediaCommandsCanExecute();
+    }
+
+    private void RaiseMediaCommandsCanExecute()
+    {
         (PreviousCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (PlayPauseCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (NextCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SeekBackCommand as RelayCommand)?.RaiseCanExecuteChanged();
         (SeekForwardCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private void RaiseAudioProperties()
+    {
+        RaiseMany(nameof(VolumeText), nameof(VolumeGlyph), nameof(OutputDeviceText), nameof(AudioStatusText),
+            nameof(IsMuted), nameof(IsAudioActive), nameof(ShowAudioStatusText), nameof(ShowVolume),
+            nameof(ShowMedia), nameof(PrimaryActivity), nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText),
+            nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowCompactRingTrack),
+            nameof(UseRealSpectrum), nameof(ShowAnimatedWave));
         (ToggleMuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private void RaiseBatteryProperties()
+    {
+        RaiseMany(nameof(BatteryText), nameof(ChargingText), nameof(BatteryGlyph),
+            nameof(ShowBattery), nameof(IsCharging), nameof(IsPowerConnected), nameof(ShowBatteryLevel),
+            nameof(ShowCompactChargingIndicator), nameof(ShowCompactSecondary), nameof(ShowBatteryTime), nameof(BatteryTimeText),
+            nameof(ShowStatusExtras), nameof(ShowWidgetsPanel), nameof(PrimaryActivity),
+            nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText),
+            nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowCompactRingTrack));
+    }
+
+    private void RaiseVisionProperties()
+    {
+        RaiseMany(nameof(Vision), nameof(ShowVisionStatus), nameof(VisionStatusText), nameof(VisionDotBrush), nameof(VisionAlert),
+            nameof(ShowVisionButton), nameof(CameraPreview), nameof(ShowCameraPreview),
+            nameof(ShowStatusExtras), nameof(ShowWidgetsPanel));
+    }
+
+    private void RaiseThemeProperties()
+    {
+        RaiseMany(nameof(PrimaryTextBrush), nameof(SecondaryTextBrush), nameof(AccentTextBrush), nameof(PanelBrush),
+            nameof(PanelBorderBrush), nameof(AccentBrush), nameof(AccentSoftBrush), nameof(IslandSurfaceBrush), nameof(IslandCardBrush), nameof(IslandDividerBrush),
+            nameof(ShellControlBrush), nameof(ShellControlHoverBrush), nameof(ProgressFillBrush), nameof(ProgressTrackBrush), nameof(UiFontFamily));
+    }
+
+    private void RaiseExpansionProperties()
+    {
+        RaiseMany(nameof(IsCompact), nameof(ShowTimerOrb), nameof(ShowQuoteInCompact), nameof(ShowQuoteInExpanded));
+    }
+
+    private void RaiseFocusModeProperties()
+    {
+        RaiseMany(nameof(FocusModeEnabled), nameof(FocusModeText),
+            nameof(ShowWeather), nameof(ShowSystemMonitor), nameof(ShowCountdown), nameof(ShowStocks), nameof(ShowWorldClocks),
+            nameof(ShowNextMeeting), nameof(ShowQuickLaunch), nameof(ShowBatteryTime), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
+            nameof(ShowNotification), nameof(ShowBanner));
+    }
+
+    private void RaiseLayoutProperties()
+    {
+        RaiseMany(nameof(IsCompact), nameof(IsAppleStyle), nameof(IsStatsStyle), nameof(PinExpanded),
+            nameof(IslandCornerRadius), nameof(IslandInnerCornerRadius),
+            nameof(CompactAlbumSize), nameof(ExpandedAlbumSize), nameof(PreviewCompactAlbumSize), nameof(PreviewExpandedAlbumSize),
+            nameof(CompactAlbumRadius), nameof(ExpandedAlbumRadius), nameof(PreviewCompactAlbumRadius), nameof(PreviewExpandedAlbumRadius),
+            nameof(CompactIconCorner), nameof(ExpandedIconCorner), nameof(PreviewCompactIconCorner), nameof(PreviewExpandedIconCorner),
+            nameof(CompactRingGeometry), nameof(ExpandedRingGeometry), nameof(CompactRingPerimeterUnits), nameof(ExpandedRingPerimeterUnits),
+            nameof(AlbumScale), nameof(ExpandedAlbumScale), nameof(PreviewIslandWidth), nameof(PreviewIslandHeight),
+            nameof(MediaColumn), nameof(VolumeColumn), nameof(StatusColumn), nameof(InterfaceScaleFactor),
+            nameof(ClockFontSize), nameof(DateFontSize), nameof(BatteryGlyphFontSize), nameof(BatteryTextFontSize),
+            nameof(ChargingGlyphFontSize), nameof(ChargingTextFontSize), nameof(CompactChargingTextFontSize),
+            nameof(MediaTitleFontSize), nameof(MediaArtistFontSize), nameof(VolumeFontSize), nameof(VisionTextFontSize),
+            nameof(CompactGlyphFontSize), nameof(CompactPrimaryFontSize), nameof(CompactSecondaryFontSize), nameof(CompactClockFontSize),
+            nameof(ExpandedMediaTitleFontSize), nameof(ExpandedMediaArtistFontSize));
+    }
+
+    private void RaiseSettingsChanged()
+    {
+        // Settings affect many subsystems — raise grouped notifications but keep structural
+        // visual-mode notifications precise (handled via layout/theme groups).
+        RaiseLayoutProperties();
+        RaiseThemeProperties();
+        RaiseMediaPresentationChanged();
+        RaiseAudioProperties();
+        RaiseBatteryProperties();
+        RaiseVisionProperties();
+        RaiseFocusModeProperties();
+        RaiseMany(nameof(ShowClock), nameof(ShowDate), nameof(ShowTimerAlarm), nameof(DebugOverlay), nameof(IsReducedMotion),
+            nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse),
+            nameof(ShowWeather), nameof(WeatherGlyph), nameof(WeatherTempText), nameof(WeatherDescText),
+            nameof(ShowSystemMonitor), nameof(ShowCompactRam), nameof(CpuText), nameof(RamText), nameof(NetText),
+            nameof(RamPercentValue), nameof(NetSparkline), nameof(ShowCountdown), nameof(CountdownText),
+            nameof(ShowWorldClocks), nameof(WorldClocks), nameof(ShowQuotes), nameof(ShowQuoteInCompact), nameof(ShowQuoteInExpanded),
+            nameof(QuoteText), nameof(QuoteAuthor), nameof(QuoteAuthorDisplay), nameof(ShowQuoteAuthor),
+            nameof(QuoteTextFontSize), nameof(QuoteAuthorFontSize), nameof(ShowStocks), nameof(Stocks),
+            nameof(ShowNextMeeting), nameof(MeetingTitle), nameof(MeetingWhen), nameof(HasMeetingJoin),
+            nameof(ShowBatteryTime), nameof(BatteryTimeText), nameof(ShowQuickLaunch), nameof(LaunchItems),
+            nameof(ShowNotification), nameof(ShowBanner), nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
+            nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(PinExpanded), nameof(ScrollTitles));
+        RaiseMediaCommandsCanExecute();
+        (ToggleMuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
+    }
+
+    private void RaiseComputed()
+    {
+        // Legacy broad refresh — preserved for compatibility but delegates to grouped helpers
+        // to keep notification semantics consistent. Prefer targeted helpers for runtime events.
+        RaiseSettingsChanged();
     }
 
     private static MediaBrush FrozenBrush(string value) => BrushCache.GetOrAdd(value, static color =>
@@ -1122,8 +1177,10 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private void UpdateArtwork(byte[]? bytes)
     {
         if (ReferenceEquals(bytes, _artworkBytes)) return;
+        var oldAdaptive = _adaptiveAccent;
         _artworkBytes = bytes;
         _adaptiveAccent = Settings.AdaptiveAccent ? Infrastructure.ImageColor.Dominant(bytes) : null;
+        var accentChanged = !string.Equals(oldAdaptive, _adaptiveAccent, StringComparison.OrdinalIgnoreCase);
         _artwork = null;
         if (bytes is not null)
         {
@@ -1143,11 +1200,20 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         }
         RaisePropertyChanged(nameof(Artwork));
         RaisePropertyChanged(nameof(HasArtwork));
+        // In-place artwork update must not trigger structural layout transitions.
+        RaisePropertyChanged(nameof(ShowCompactArt));
+        RaisePropertyChanged(nameof(ShowCompactMediaRing));
+        RaisePropertyChanged(nameof(ShowExpandedMediaRing));
+        RaisePropertyChanged(nameof(ShowCompactRingTrack));
+        if (accentChanged && Settings.AdaptiveAccent)
+            RaiseMany(nameof(AccentBrush), nameof(AccentSoftBrush), nameof(AccentTextBrush));
     }
 
     private static void OnUi(Action action)
     {
-        var dispatcher = System.Windows.Application.Current.Dispatcher;
+        var app = System.Windows.Application.Current;
+        if (app is null) { action(); return; }
+        var dispatcher = app.Dispatcher;
         if (dispatcher.CheckAccess()) action(); else dispatcher.BeginInvoke(action);
     }
 

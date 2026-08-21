@@ -242,9 +242,18 @@
                             <TextBlock Text="RAM" FontFamily="{Binding UiFontFamily}" FontSize="8" Foreground="{Binding SecondaryTextBrush}" HorizontalAlignment="Right" />
                             <TextBlock Text="{Binding RamText}" Margin="0,1,0,0" FontFamily="{Binding UiFontFamily}" FontSize="{Binding CompactSecondaryFontSize}" FontWeight="SemiBold" Foreground="{Binding AccentBrush}" HorizontalAlignment="Right" />
                         </StackPanel>
-                        <TextBlock Text="{Binding ClockTimeText}" FontFamily="{Binding UiFontFamily}" FontSize="{Binding CompactClockFontSize}" FontWeight="SemiBold"
-                                   Visibility="{Binding ShowClock, Converter={StaticResource BoolToVisibility}}"
-                                   Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center" />
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ClockTimeText}" FontFamily="{Binding UiFontFamily}" FontSize="{Binding CompactClockFontSize}" FontWeight="SemiBold"
+                                       Visibility="{Binding ShowClock, Converter={StaticResource BoolToVisibility}}"
+                                       Foreground="{Binding PrimaryTextBrush}" HorizontalAlignment="Right" />
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0" HorizontalAlignment="Right"
+                                        Visibility="{Binding ShowBattery, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding BatteryGlyph}" FontFamily="Segoe Fluent Icons" FontSize="10"
+                                           Foreground="{Binding SecondaryTextBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding BatteryText}" Margin="4,0,0,0" FontFamily="{Binding UiFontFamily}" FontSize="9.5"
+                                           Foreground="{Binding SecondaryTextBrush}" />
+                            </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
 

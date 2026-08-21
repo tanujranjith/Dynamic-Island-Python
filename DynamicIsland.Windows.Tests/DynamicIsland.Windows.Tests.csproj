@@ -18,5 +18,8 @@
     <Compile Include="..\DynamicIsland.Windows\Infrastructure\SeekMath.cs" Link="SeekMath.cs" />
     <Compile Include="..\DynamicIsland.Windows\Models\TimerAlarmState.cs" Link="TimerAlarmState.cs" />
     <Compile Include="..\DynamicIsland.Windows\Models\RecurrenceRule.cs" Link="RecurrenceRule.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Infrastructure\ViewModelNotificationGroups.cs" Link="ViewModelNotificationGroups.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Infrastructure\MediaPresentation.cs" Link="MediaPresentation.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Models\MediaInfo.cs" Link="MediaInfo.cs" />
   </ItemGroup>
 </Project>

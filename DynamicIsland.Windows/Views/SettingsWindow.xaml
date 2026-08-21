@@ -270,36 +270,50 @@
                             </Border.Resources>
                             <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="7" Opacity="0.55" Color="#000000" /></Border.Effect>
                             <Grid ClipToBounds="True">
-                                <!-- Compact live state -->
-                                <Grid x:Name="CompactPreviewContent" Margin="9,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="50" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <Grid Width="{Binding PreviewCompactAlbumSize}" Height="{Binding PreviewCompactAlbumSize}" VerticalAlignment="Center">
-                                        <Border CornerRadius="{Binding PreviewCompactIconCorner}" Background="{Binding IslandCardBrush}">
+                                <!-- Compact live state - MUST stay pixel-identical to IslandWindow.xaml CompactContent.
+                                     Any layout change here must be mirrored there, otherwise titles like
+                                     "Outside..." truncate differently in preview vs the live pill (see fix for
+                                     outs... vs Outside T... mismatch). Uses same columns/margins/album binding
+                                     and status lane (divider + RAM + Clock + Battery). -->
+                                <Grid x:Name="CompactPreviewContent" Margin="10,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="52" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <Grid Width="{Binding CompactAlbumSize}" Height="{Binding CompactAlbumSize}" VerticalAlignment="Center">
+                                        <Border CornerRadius="{Binding CompactIconCorner}" Background="{Binding IslandCardBrush}">
                                             <TextBlock Text="{Binding CompactGlyph}" FontFamily="Segoe Fluent Icons" FontSize="{Binding CompactGlyphFontSize}" Foreground="{Binding AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
                                         <!-- The Settings preview stays demonstrative even when the user has
-                                             temporarily disabled Media/album art in the real island. -->
-                                        <Border CornerRadius="{Binding PreviewCompactIconCorner}" ClipToBounds="True"
+                                             temporarily disabled Media/album art in the real island. To keep
+                                             truncation realistic we keep the same container sizes as the live
+                                             island and use HasArtwork (preview) vs ShowCompactArt (live).
+                                             Size bindings are already aliased to CompactAlbumSize. -->
+                                        <Border CornerRadius="{Binding CompactIconCorner}" ClipToBounds="True"
                                                 Visibility="{Binding HasArtwork, Converter={StaticResource BoolToVisibility}}">
                                             <Border.Background><ImageBrush ImageSource="{Binding Artwork}" Stretch="UniformToFill" /></Border.Background>
                                         </Border>
                                     </Grid>
-                                    <StackPanel Grid.Column="1" Margin="11,0" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding MediaTitle}" FontSize="{Binding MediaTitleFontSize}" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding MediaArtist}" FontSize="{Binding MediaArtistFontSize}" Foreground="{Binding SecondaryTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                    <StackPanel Grid.Column="1" Margin="11,0,13,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding MediaTitle}" FontFamily="{Binding UiFontFamily}" FontSize="{Binding MediaTitleFontSize}" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding MediaArtist}" Margin="0,2,0,0" FontFamily="{Binding UiFontFamily}" FontSize="{Binding MediaArtistFontSize}" Foreground="{Binding SecondaryTextBrush}" TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,6,0">
-                                        <StackPanel Margin="0,0,11,0">
-                                            <StackPanel.Style>
-                                                <Style TargetType="StackPanel">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                    <Style.Triggers><DataTrigger Binding="{Binding ShowCompactRam}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
-                                                </Style>
-                                            </StackPanel.Style>
-                                            <TextBlock Text="RAM" FontSize="8" Foreground="{Binding SecondaryTextBrush}" HorizontalAlignment="Right" />
-                                            <TextBlock Text="{Binding RamText}" FontSize="{Binding CompactSecondaryFontSize}" FontWeight="SemiBold" Foreground="{Binding AccentBrush}" HorizontalAlignment="Right" />
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Width="1" Height="30" Margin="0,0,12,0" Background="{Binding IslandDividerBrush}"
+                                                Visibility="{Binding ShowCompactRam, Converter={StaticResource BoolToVisibility}}" />
+                                        <StackPanel Margin="0,0,13,0" Visibility="{Binding ShowCompactRam, Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock Text="RAM" FontFamily="{Binding UiFontFamily}" FontSize="8" Foreground="{Binding SecondaryTextBrush}" HorizontalAlignment="Right" />
+                                            <TextBlock Text="{Binding RamText}" Margin="0,1,0,0" FontFamily="{Binding UiFontFamily}" FontSize="{Binding CompactSecondaryFontSize}" FontWeight="SemiBold" Foreground="{Binding AccentBrush}" HorizontalAlignment="Right" />
                                         </StackPanel>
-                                        <TextBlock Text="{Binding ClockTimeText}" FontSize="{Binding CompactClockFontSize}" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center" />
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding ClockTimeText}" FontFamily="{Binding UiFontFamily}" FontSize="{Binding CompactClockFontSize}" FontWeight="SemiBold"
+                                                       Visibility="{Binding ShowClock, Converter={StaticResource BoolToVisibility}}"
+                                                       Foreground="{Binding PrimaryTextBrush}" HorizontalAlignment="Right" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0" HorizontalAlignment="Right"
+                                                        Visibility="{Binding ShowBattery, Converter={StaticResource BoolToVisibility}}">
+                                                <TextBlock Text="{Binding BatteryGlyph}" FontFamily="Segoe Fluent Icons" FontSize="10"
+                                                           Foreground="{Binding SecondaryTextBrush}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding BatteryText}" Margin="4,0,0,0" FontFamily="{Binding UiFontFamily}" FontSize="9.5"
+                                                           Foreground="{Binding SecondaryTextBrush}" />
+                                            </StackPanel>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Grid>
 
