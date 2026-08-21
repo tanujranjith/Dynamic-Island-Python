@@ -8,6 +8,7 @@ using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
 using DynamicIsland.Windows.Services.Vision;
 using DynamicIsland.Windows.Services.Q;
+using DynamicIsland.Q.Core;
 
 namespace DynamicIsland.Windows.ViewModels;
 
@@ -22,6 +23,8 @@ public sealed class SettingsViewModel : ObservableObject
     private readonly Action _recenter;
     private readonly Action _close;
     private readonly IQSecretStore _qSecrets;
+    private readonly IQProviderRegistry _qProviders;
+    private string _qConnectionStatus = "Not tested";
     private string _visionStatusLine = string.Empty;
     private bool _visionBusy;
     private BitmapImage? _cameraPreview;
@@ -35,7 +38,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     public SettingsViewModel(AppSettings settings, SettingsService settingsService,
         StartupService startupService, VisionService vision, VisionModelManager visionModels,
-        Action apply, Action recenter, Action close, IQSecretStore qSecrets)
+        Action apply, Action recenter, Action close, IQSecretStore qSecrets, IQProviderRegistry qProviders)
     {
         _settings = settings;
         _settingsService = settingsService;
@@ -46,6 +49,7 @@ public sealed class SettingsViewModel : ObservableObject
         _recenter = recenter;
         _close = close;
         _qSecrets = qSecrets;
+        _qProviders = qProviders;
         SaveCommand = new RelayCommand(() => _ = SaveAsync());
         RecenterCommand = new RelayCommand(() => { _recenter(); _ = SaveAsync(false); });
         CloseCommand = new RelayCommand(() => { _ = SaveAsync(); _close(); });
@@ -67,6 +71,7 @@ public sealed class SettingsViewModel : ObservableObject
         MoveModuleUpCommand = new RelayCommand<ModuleItem>(m => MoveModule(m, -1));
         MoveModuleDownCommand = new RelayCommand<ModuleItem>(m => MoveModule(m, +1));
         SelectSectionCommand = new RelayCommand<string>(k => { if (k is not null) SelectedSectionKey = k; });
+        TestQCommand = new RelayCommand(() => _ = TestQAsync());
         AddQuickLaunchCommand = new RelayCommand(AddQuickLaunch);
         RemoveQuickLaunchCommand = new RelayCommand<LaunchListItem>(RemoveQuickLaunch);
         BrowseQuickLaunchCommand = new RelayCommand<LaunchListItem>(BrowseQuickLaunch);
@@ -388,6 +393,26 @@ public sealed class SettingsViewModel : ObservableObject
     public string QOllamaBaseUrl { get => _settings.QOllamaBaseUrl; set { Set(v => _settings.QOllamaBaseUrl = v ?? "http://localhost:11434/v1", value); _apply(); } }
     public int QTimeoutSeconds { get => _settings.QTimeoutSeconds; set => SetSize(v => _settings.QTimeoutSeconds = v, value, 10, 300); }
     public int QMaxResponseTokens { get => _settings.QMaxResponseTokens; set => SetSize(v => _settings.QMaxResponseTokens = v, value, 128, 4096); }
+    public string QConnectionStatus { get => _qConnectionStatus; private set => SetProperty(ref _qConnectionStatus, value); }
+    public ICommand TestQCommand { get; }
+
+    private async Task TestQAsync()
+    {
+        var provider = _qProviders.Find(_settings.QSelectedProvider);
+        if (provider is null) { QConnectionStatus = "Provider unavailable"; return; }
+        if (!string.Equals(_settings.QSelectedProvider, "ollama", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(_qSecrets.Get(_settings.QSelectedProvider)))
+        {
+            QConnectionStatus = "Add an API key first";
+            return;
+        }
+        try
+        {
+            var models = await provider.GetModelsAsync(_qSecrets.Get(_settings.QSelectedProvider), CancellationToken.None);
+            QConnectionStatus = $"Connected · {models.Count} model{(models.Count == 1 ? "" : "s")} available";
+        }
+        catch (Exception ex) { QConnectionStatus = ex.Message.Length > 120 ? ex.Message[..120] : ex.Message; }
+    }
     public bool ShowClipboard { get => _settings.ShowClipboard; set { Set(v => _settings.ShowClipboard = v, value); _apply(); } }
     public bool ShowBatteryTime { get => _settings.ShowBatteryTime; set { Set(v => _settings.ShowBatteryTime = v, value); _apply(); } }
     public bool LowBatteryWarning { get => _settings.LowBatteryWarning; set { Set(v => _settings.LowBatteryWarning = v, value); _apply(); } }

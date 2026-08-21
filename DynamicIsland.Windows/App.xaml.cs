@@ -148,7 +148,7 @@ public partial class App : System.Windows.Application
         _islandWindow.Closed += (_, _) => { if (!_isShuttingDown) ShutdownApplication(); };
 
         _settingsViewModel = new SettingsViewModel(_settings, _settingsService, _startupService,
-            _vision, _visionModels, ApplySettings, Recenter, () => _settingsWindow?.Hide(), _qSecrets);
+            _vision, _visionModels, ApplySettings, Recenter, () => _settingsWindow?.Hide(), _qSecrets, providers);
         _settingsViewModel.OpenVisionPage = ShowVisionSettings;
         _media.AvailableAppsChanged += (_, apps) => Dispatcher.BeginInvoke(() =>
             _settingsViewModel.SetAvailableApps(apps));

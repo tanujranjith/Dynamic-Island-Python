@@ -44,8 +44,25 @@ public abstract class HttpQProvider(HttpClient? httpClient = null) : IQProvider
     protected readonly HttpClient Http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
     public abstract QProviderInfo Info { get; }
 
-    public virtual Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<QModelInfo>>([new QModelInfo(Info.DefaultModel, Info.DefaultModel, Info.Capabilities, true)]);
+    public virtual async Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken)
+    {
+        if (!Info.Capabilities.HasFlag(QProviderCapabilities.ModelDiscovery))
+            return [new QModelInfo(Info.DefaultModel, Info.DefaultModel, Info.Capabilities, true)];
+        using var request = new HttpRequestMessage(HttpMethod.Get, Endpoint(Info.DefaultBaseUrl, Info.DefaultBaseUrl ?? "", "/models"));
+        AddBearer(request, credential);
+        using var response = await Http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        var models = new List<QModelInfo>();
+        if (json.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+            foreach (var item in data.EnumerateArray())
+            {
+                var id = ProviderJson.JsonString(item, "id");
+                if (id.Length > 0) models.Add(new QModelInfo(id, id, Info.Capabilities));
+            }
+        if (models.Count == 0) models.Add(new QModelInfo(Info.DefaultModel, Info.DefaultModel, Info.Capabilities, true));
+        return models;
+    }
 
     protected static string Endpoint(string? baseUrl, string fallback, string suffix)
     {
@@ -129,42 +146,42 @@ public abstract class HttpQProvider(HttpClient? httpClient = null) : IQProvider
 
 public sealed class OpenAiQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
 {
-    public override QProviderInfo Info { get; } = new("openai", "OpenAI", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming, "gpt-4o-mini", "https://api.openai.com/v1");
+    public override QProviderInfo Info { get; } = new("openai", "OpenAI", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery, "gpt-4o-mini", "https://api.openai.com/v1");
     public override IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl, CancellationToken cancellationToken) =>
         StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken);
 }
 
 public sealed class GroqQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
 {
-    public override QProviderInfo Info { get; } = new("groq", "Groq", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming, "llama-3.2-11b-vision-preview", "https://api.groq.com/openai/v1");
+    public override QProviderInfo Info { get; } = new("groq", "Groq", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery, "llama-3.2-11b-vision-preview", "https://api.groq.com/openai/v1");
     public override IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl, CancellationToken cancellationToken) =>
         StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken);
 }
 
 public sealed class XaiQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
 {
-    public override QProviderInfo Info { get; } = new("xai", "xAI / Grok", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming, "grok-2-vision-1212", "https://api.x.ai/v1");
+    public override QProviderInfo Info { get; } = new("xai", "xAI / Grok", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery, "grok-2-vision-1212", "https://api.x.ai/v1");
     public override IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl, CancellationToken cancellationToken) =>
         StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken);
 }
 
 public sealed class OpenRouterQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
 {
-    public override QProviderInfo Info { get; } = new("openrouter", "OpenRouter", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming, "openai/gpt-4o-mini", "https://openrouter.ai/api/v1");
+    public override QProviderInfo Info { get; } = new("openrouter", "OpenRouter", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery, "openai/gpt-4o-mini", "https://openrouter.ai/api/v1");
     public override IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl, CancellationToken cancellationToken) =>
         StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken);
 }
 
 public sealed class DeepSeekQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
 {
-    public override QProviderInfo Info { get; } = new("deepseek", "DeepSeek", QProviderCapabilities.Text | QProviderCapabilities.Streaming, "deepseek-chat", "https://api.deepseek.com/v1");
+    public override QProviderInfo Info { get; } = new("deepseek", "DeepSeek", QProviderCapabilities.Text | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery, "deepseek-chat", "https://api.deepseek.com/v1");
     public override IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl, CancellationToken cancellationToken) =>
         StreamOpenAiCompatibleAsync(request with { IncludeImage = false }, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken);
 }
 
 public sealed class OllamaQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
 {
-    public override QProviderInfo Info { get; } = new("ollama", "Ollama", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming, "llama3.2-vision", "http://localhost:11434/v1");
+    public override QProviderInfo Info { get; } = new("ollama", "Ollama", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery, "llama3.2-vision", "http://localhost:11434/v1");
     public override IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl, CancellationToken cancellationToken) =>
         StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken);
 }
