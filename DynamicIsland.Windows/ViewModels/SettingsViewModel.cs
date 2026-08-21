@@ -72,6 +72,11 @@ public sealed class SettingsViewModel : ObservableObject
         MoveModuleDownCommand = new RelayCommand<ModuleItem>(m => MoveModule(m, +1));
         SelectSectionCommand = new RelayCommand<string>(k => { if (k is not null) SelectedSectionKey = k; });
         TestQCommand = new RelayCommand(() => _ = TestQAsync());
+        ResetQPromptsCommand = new RelayCommand(ResetQPrompts);
+        AddQShortcutCommand = new RelayCommand(AddQShortcut);
+        RemoveQShortcutCommand = new RelayCommand<QShortcutItem>(RemoveQShortcut);
+        MoveQShortcutUpCommand = new RelayCommand<QShortcutItem>(item => MoveQShortcut(item, -1));
+        MoveQShortcutDownCommand = new RelayCommand<QShortcutItem>(item => MoveQShortcut(item, 1));
         AddQuickLaunchCommand = new RelayCommand(AddQuickLaunch);
         RemoveQuickLaunchCommand = new RelayCommand<LaunchListItem>(RemoveQuickLaunch);
         BrowseQuickLaunchCommand = new RelayCommand<LaunchListItem>(BrowseQuickLaunch);
@@ -81,6 +86,7 @@ public sealed class SettingsViewModel : ObservableObject
         _vision.EnrollProgressChanged += OnEnrollProgress;
         _visionStatusLine = BuildVisionStatus();
         InitLists();
+        RebuildQShortcuts();
     }
 
     // Called by the camera settings window so live preview frames flow only while it is open.
@@ -393,9 +399,61 @@ public sealed class SettingsViewModel : ObservableObject
     public bool QIncludeScreenImage { get => _settings.QIncludeScreenImage; set { Set(v => _settings.QIncludeScreenImage = v, value); _apply(); } }
     public string QOllamaBaseUrl { get => _settings.QOllamaBaseUrl; set { Set(v => _settings.QOllamaBaseUrl = v ?? "http://localhost:11434/v1", value); _apply(); } }
     public int QTimeoutSeconds { get => _settings.QTimeoutSeconds; set => SetSize(v => _settings.QTimeoutSeconds = v, value, 10, 300); }
-    public int QMaxResponseTokens { get => _settings.QMaxResponseTokens; set => SetSize(v => _settings.QMaxResponseTokens = v, value, 128, 4096); }
+    public int QMaxResponseTokens { get => _settings.QMaxResponseTokens; set => SetSize(v => _settings.QMaxResponseTokens = v, value, 2048, 32768); }
+    public string QAskSystemPrompt { get => _settings.QAskSystemPrompt; set { Set(v => _settings.QAskSystemPrompt = v ?? "", value); _apply(); } }
+    public string QSaySystemPrompt { get => _settings.QSaySystemPrompt; set { Set(v => _settings.QSaySystemPrompt = v ?? "", value); _apply(); } }
     public string QConnectionStatus { get => _qConnectionStatus; private set => SetProperty(ref _qConnectionStatus, value); }
     public ICommand TestQCommand { get; }
+    public ICommand ResetQPromptsCommand { get; }
+    public ObservableCollection<QShortcutItem> QShortcutList { get; } = [];
+    public ICommand AddQShortcutCommand { get; }
+    public ICommand RemoveQShortcutCommand { get; }
+    public ICommand MoveQShortcutUpCommand { get; }
+    public ICommand MoveQShortcutDownCommand { get; }
+
+    private void ResetQPrompts()
+    {
+        QAskSystemPrompt = string.Empty;
+        QSaySystemPrompt = string.Empty;
+    }
+
+    private void RebuildQShortcuts()
+    {
+        QShortcutList.Clear();
+        foreach (var shortcut in _settings.QShortcuts ?? [])
+            QShortcutList.Add(new QShortcutItem(shortcut.Name ?? "", shortcut.Prompt ?? "", SyncQShortcuts));
+    }
+
+    private void SyncQShortcuts()
+    {
+        _settings.QShortcuts = QShortcutList
+            .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !string.IsNullOrWhiteSpace(item.Prompt))
+            .Select(item => new QShortcut { Name = item.Name.Trim(), Prompt = item.Prompt.Trim() })
+            .ToList();
+        _apply();
+    }
+
+    private void AddQShortcut()
+    {
+        QShortcutList.Add(new QShortcutItem("New shortcut", "", SyncQShortcuts));
+        _apply();
+    }
+
+    private void RemoveQShortcut(QShortcutItem? item)
+    {
+        if (item is null || !QShortcutList.Remove(item)) return;
+        SyncQShortcuts();
+    }
+
+    private void MoveQShortcut(QShortcutItem? item, int direction)
+    {
+        if (item is null) return;
+        var index = QShortcutList.IndexOf(item);
+        var target = index + direction;
+        if (index < 0 || target < 0 || target >= QShortcutList.Count) return;
+        QShortcutList.Move(index, target);
+        SyncQShortcuts();
+    }
 
     private async Task TestQAsync()
     {
@@ -814,6 +872,7 @@ public sealed class SettingsViewModel : ObservableObject
         _settings.ResetToDefaults();
         RebuildModuleOrder();
         RebuildQuickLaunch();
+        RebuildQShortcuts();
         RaisePropertyChanged(string.Empty); // refresh every bound control in the settings windows
         RefreshVisionStatus();
         _ = SaveAsync(); // persists + re-applies to the island (and syncs the startup registry)

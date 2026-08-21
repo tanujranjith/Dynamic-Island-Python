@@ -25,6 +25,18 @@ public sealed class QCoreTests
     }
 
     [Fact]
+    public void CustomSystemPromptIsAppendedWithoutRemovingModeGuidance()
+    {
+        var request = new QRequest(QMode.Ask, "Summarize this", null, [], "test", false, 8192, "Use concise bullet points.");
+
+        var systemPrompt = QPromptComposer.BuildMessages(request)[0].Content;
+
+        Assert.Contains("Ask mode", systemPrompt);
+        Assert.Contains("Additional instructions from the user", systemPrompt);
+        Assert.Contains("Use concise bullet points.", systemPrompt);
+    }
+
+    [Fact]
     public async Task SessionStreamsAndKeepsShortHistory()
     {
         var provider = new FakeProvider();
@@ -49,9 +61,22 @@ public sealed class QCoreTests
         Assert.Contains("fake provider failure", session.Snapshot.Error);
     }
 
+    [Fact]
+    public async Task SessionTreatsAnEmptyProviderStreamAsAnError()
+    {
+        var provider = new FakeProvider { ReturnEmpty = true };
+        using var session = new QSessionController(new QProviderRegistry([provider]));
+
+        await session.SubmitAsync("hello", QMode.Ask, "fake", "demo", "key", null, false);
+
+        Assert.Equal(QRunState.Error, session.Snapshot.State);
+        Assert.Contains("empty response", session.Snapshot.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class FakeProvider : IQProvider
     {
         public bool ShouldFail { get; set; }
+        public bool ReturnEmpty { get; set; }
         public QRequest? LastRequest { get; private set; }
         public QProviderInfo Info { get; } = new("fake", "Fake", QProviderCapabilities.Text | QProviderCapabilities.Streaming, "demo");
         public Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken) =>
@@ -63,6 +88,11 @@ public sealed class QCoreTests
             LastRequest = request;
             if (ShouldFail) throw new InvalidOperationException("fake provider failure");
             yield return new QStreamEvent.Started();
+            if (ReturnEmpty)
+            {
+                yield return new QStreamEvent.Completed();
+                yield break;
+            }
             yield return new QStreamEvent.Text("hello ");
             await Task.Yield();
             yield return new QStreamEvent.Text("world");

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -179,10 +180,27 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public QRunState QState => _qSnapshot.State;
     public QMode QCurrentMode => _qSnapshot.Mode;
     public string QStatusText => _qSnapshot.Status;
+    public string QHeaderStatusText => QState switch
+    {
+        QRunState.Capturing => "Reading…",
+        QRunState.Ready => "Ready",
+        QRunState.Listening => "Listening…",
+        QRunState.Thinking => "Thinking…",
+        QRunState.Streaming => "Responding…",
+        QRunState.Complete => "Complete",
+        QRunState.Cancelled => "Cancelled",
+        QRunState.Error => "Needs attention",
+        _ => "Ready"
+    };
     public string QResponse => _qSnapshot.Response;
     public string QPromptText => _qSnapshot.Prompt;
     public string QPromptDisplay => string.IsNullOrWhiteSpace(QPromptText) ? "Ask Q about what you’re looking at." : QPromptText;
+    public bool QHasPrompt => !string.IsNullOrWhiteSpace(QPromptText);
     public bool QShowInlineThinking => QState is QRunState.Capturing or QRunState.Thinking or QRunState.Streaming;
+    public bool QCanStop => QState is QRunState.Capturing or QRunState.Listening or QRunState.Thinking or QRunState.Streaming;
+    public bool QCanCopyResponse => !string.IsNullOrWhiteSpace(QResponse);
+    public bool QCanRetry => !string.IsNullOrWhiteSpace(QPromptText) && QState is QRunState.Complete or QRunState.Cancelled or QRunState.Error;
+    public bool QShowResponseActions => QCanStop || QCanCopyResponse || QCanRetry;
     public string QInlineStatusText => QState switch
     {
         QRunState.Capturing => "Reading…",
@@ -199,7 +217,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             QRunState.Error when !string.IsNullOrWhiteSpace(QError) => QError,
             _ => "Ask Q about what you’re looking at."
         }
-        : QResponse;
+        : CleanQResponseText(QResponse);
     public string QError => _qSnapshot.Error ?? string.Empty;
     public string QSourceText => _qSnapshot.Context is { } context
         ? string.IsNullOrWhiteSpace(context.ProcessName) ? "Active window" : context.ProcessName
@@ -219,9 +237,22 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool QIsListening => QState == QRunState.Listening;
     public bool QNeedsConsent => !Settings.QDisclosureAccepted;
     public bool QSpeechAvailable => _qSpeech.IsAvailable;
+    public IReadOnlyList<QShortcut> QShortcuts => Settings.QShortcuts ?? [];
+    public bool QHasShortcuts => QShortcuts.Count > 0;
     public string QSelectedProvider => Settings.QSelectedProvider;
     public bool ShowCompactMediaContent => ShowMedia && !IsQActive;
     public bool ShowCompactQContent => IsQActive;
+
+    private static string CleanQResponseText(string response)
+    {
+        if (string.IsNullOrWhiteSpace(response)) return string.Empty;
+        var cleaned = response.Replace("```", string.Empty, StringComparison.Ordinal)
+            .Replace("**", string.Empty, StringComparison.Ordinal)
+            .Replace("__", string.Empty, StringComparison.Ordinal)
+            .Replace("`", string.Empty, StringComparison.Ordinal);
+        cleaned = Regex.Replace(cleaned, @"(?m)^\s{0,3}#{1,6}\s+", string.Empty);
+        return cleaned.Trim();
+    }
     public MediaInfo Media { get => _media; private set { if (SetProperty(ref _media, value)) UpdateArtwork(value.Artwork); } }
     public AudioState Audio { get => _audio; private set => SetProperty(ref _audio, value); }
     public BatteryState Battery { get => _battery; private set => SetProperty(ref _battery, value); }
@@ -783,10 +814,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         }
         var baseUrl = string.Equals(Settings.QSelectedProvider, "ollama", StringComparison.OrdinalIgnoreCase) ? Settings.QOllamaBaseUrl : null;
         var credential = _qSecrets.Get(Settings.QSelectedProvider);
+        var customSystemPrompt = _qSnapshot.Mode == QMode.Say ? Settings.QSaySystemPrompt : Settings.QAskSystemPrompt;
         await _qSession.SubmitAsync(prompt, _qSnapshot.Mode, Settings.QSelectedProvider, Settings.QSelectedModel, credential, baseUrl,
             Settings.QIncludeScreenImage,
             token => _qScreen.CaptureAsync(_qTargetWindow, Settings.QCaptureMode == Models.QCaptureMode.ActiveMonitor ? DynamicIsland.Q.Core.QCaptureMode.ActiveMonitor : DynamicIsland.Q.Core.QCaptureMode.ActiveWindow, token),
-            maxResponseTokens: Settings.QMaxResponseTokens).ConfigureAwait(false);
+            maxResponseTokens: Settings.QMaxResponseTokens,
+            customSystemPrompt: customSystemPrompt).ConfigureAwait(false);
     }
 
     public async Task<string?> DictateQAsync()
@@ -825,7 +858,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseQProperties();
     });
 
-    private void RaiseQProperties() => RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QResponse), nameof(QResponseDisplay), nameof(QPromptText), nameof(QPromptDisplay), nameof(QInlineStatusText), nameof(QShowInlineThinking), nameof(QError),
+    private void RaiseQProperties() => RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QHeaderStatusText), nameof(QResponse), nameof(QResponseDisplay), nameof(QPromptText), nameof(QPromptDisplay), nameof(QHasPrompt), nameof(QInlineStatusText), nameof(QShowInlineThinking), nameof(QCanStop), nameof(QCanCopyResponse), nameof(QCanRetry), nameof(QShowResponseActions), nameof(QError), nameof(QShortcuts), nameof(QHasShortcuts),
         nameof(QSourceText), nameof(QCompactText), nameof(IsQActive), nameof(ShowQSurface), nameof(QIsAsk), nameof(QIsSay), nameof(QIsListening),
         nameof(QNeedsConsent), nameof(QSpeechAvailable), nameof(QSelectedProvider), nameof(ShowCompactMediaContent), nameof(ShowCompactQContent),
         nameof(PrimaryActivity), nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText), nameof(ShowCompactArt),

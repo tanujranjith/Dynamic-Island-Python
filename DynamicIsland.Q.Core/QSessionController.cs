@@ -29,7 +29,7 @@ public sealed class QSessionController(IQProviderRegistry providers) : IQSession
 
     public async Task SubmitAsync(string prompt, QMode mode, string providerId, string model, string? credential, string? baseUrl,
         bool includeImage, Func<CancellationToken, Task<QScreenContext?>>? recapture = null,
-        CancellationToken cancellationToken = default, int maxResponseTokens = 1200)
+        CancellationToken cancellationToken = default, int maxResponseTokens = 8192, string? customSystemPrompt = null)
     {
         if (string.IsNullOrWhiteSpace(prompt)) return;
         Cancel();
@@ -51,7 +51,7 @@ public sealed class QSessionController(IQProviderRegistry providers) : IQSession
             Publish(Snapshot with { State = QRunState.Thinking, Prompt = prompt, Mode = mode, Context = context, Response = string.Empty, Error = null, ProviderId = providerId, Model = model, Status = "Thinking…" });
             var request = new QRequest(mode, prompt, context, _history.ToArray(), model,
                 includeImage && context?.HasImage == true && provider.Info.Capabilities.HasFlag(QProviderCapabilities.Images),
-                Math.Clamp(maxResponseTokens, 128, 4096));
+                Math.Clamp(maxResponseTokens, 2048, 32768), customSystemPrompt);
             var response = new System.Text.StringBuilder();
             await foreach (var item in provider.StreamAsync(request, credential, baseUrl, token).ConfigureAwait(false))
             {
@@ -73,12 +73,12 @@ public sealed class QSessionController(IQProviderRegistry providers) : IQSession
             }
 
             var answer = response.ToString().Trim();
-            if (answer.Length > 0)
-            {
-                _history.Add(new QMessage("user", prompt));
-                _history.Add(new QMessage("assistant", answer));
-                while (_history.Count > 8) _history.RemoveAt(0);
-            }
+            if (answer.Length == 0)
+                throw new InvalidOperationException("The provider returned an empty response. Retry the question or switch models.");
+
+            _history.Add(new QMessage("user", prompt));
+            _history.Add(new QMessage("assistant", answer));
+            while (_history.Count > 8) _history.RemoveAt(0);
             Publish(Snapshot with { State = QRunState.Complete, Response = answer, Status = "Complete", Error = null });
         }
         catch (OperationCanceledException)

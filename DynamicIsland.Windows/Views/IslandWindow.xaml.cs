@@ -35,6 +35,7 @@ public partial class IslandWindow : Window
     private bool _liveTimerVisible;
     private bool _lastIsStatsStyle;
     private Storyboard? _qThinkingAnimation;
+    private bool _qFollowLatest = true;
 
     private const double TimerPanelWidth = 1000d;
     private const double TimerPanelHeight = 520d;
@@ -83,11 +84,14 @@ public partial class IslandWindow : Window
         {
             ApplyLayout(animate: false);
             ApplyFrost();
+            ApplyRoundedShellClip();
+            UpdateQPromptComposer();
             // Re-fit the pill whenever the expanded content's size changes (live CPU/RAM/weather/title text).
             ExpandedContent.SizeChanged += (_, _) => UpdateAutoGrow();
             QContent.SizeChanged += (_, _) => UpdateAutoGrow();
             StatsExpandedContent.SizeChanged += (_, _) => UpdateAutoGrow();
             StatsOverlay.SizeChanged += (_, _) => UpdateAutoGrow();
+            GlassShell.SizeChanged += (_, _) => ApplyRoundedShellClip();
         };
         _viewModel.PropertyChanged += ViewModelOnPropertyChanged;
         _timerViewModel.PropertyChanged += TimerViewModelOnPropertyChanged;
@@ -110,8 +114,23 @@ public partial class IslandWindow : Window
         _position.ApplyWindowStyles(this, _viewModel.Settings, _viewModel.IsCompact);
         ApplyCaptureAffinity();
         ApplyLayout(animate: false);
+        ApplyRoundedShellClip();
         ApplyFrost();
         EnsureHealthy();
+    }
+
+    // WPF Border.ClipToBounds clips to a rectangle, not to CornerRadius. Without an explicit
+    // rounded geometry, the media artwork below Q can show through the transparent corner pixels.
+    // Apply the same physical clip to the entire shell so every presentation layer shares one mask.
+    private void ApplyRoundedShellClip()
+    {
+        var width = GlassShell.ActualWidth;
+        var height = GlassShell.ActualHeight;
+        if (width <= 0 || height <= 0) return;
+
+        var requested = _viewModel.IslandCornerRadius.TopLeft;
+        var radius = Math.Clamp(requested, 0d, Math.Min(width, height) / 2d);
+        GlassShell.Clip = new RectangleGeometry(new Rect(0, 0, width, height), radius, radius);
     }
 
     private void ApplyCaptureAffinity()
@@ -197,11 +216,25 @@ public partial class IslandWindow : Window
             if (_timerPanelOpen) return;
             ApplyVisualMode();
             if (_viewModel.IsExpanded) ApplyLayout(animate: false);
-            if (_viewModel.ShowQSurface) Dispatcher.BeginInvoke(() => { QPromptBox.Focus(); Keyboard.Focus(QPromptBox); });
+            if (_viewModel.ShowQSurface)
+            {
+                _qFollowLatest = true;
+                Dispatcher.BeginInvoke(() =>
+                {
+                    QTranscriptScroll.ScrollToEnd();
+                    QPromptBox.Focus();
+                    Keyboard.Focus(QPromptBox);
+                });
+            }
         }
-        else if (e.PropertyName == nameof(IslandViewModel.QState) || e.PropertyName == nameof(IslandViewModel.QShowInlineThinking))
+        else if (e.PropertyName == nameof(IslandViewModel.QState) ||
+                 e.PropertyName == nameof(IslandViewModel.QShowInlineThinking) ||
+                 e.PropertyName == nameof(IslandViewModel.QResponse) ||
+                 e.PropertyName == nameof(IslandViewModel.QPromptText))
         {
-            UpdateQThinkingAnimation();
+            if (e.PropertyName == nameof(IslandViewModel.QState) || e.PropertyName == nameof(IslandViewModel.QShowInlineThinking))
+                UpdateQThinkingAnimation();
+            ScheduleQTranscriptScroll();
         }
         else if (e.PropertyName == nameof(IslandViewModel.BannerSeq))
         {
@@ -910,6 +943,7 @@ public partial class IslandWindow : Window
 
     private void QButton_Click(object sender, RoutedEventArgs e)
     {
+        _qFollowLatest = true;
         _ = _viewModel.StartQAsync(_qScreen.LastForegroundTarget);
         e.Handled = true;
     }
@@ -917,7 +951,16 @@ public partial class IslandWindow : Window
     private void QAsk_Click(object sender, RoutedEventArgs e) => _viewModel.SetQMode(DynamicIsland.Q.Core.QMode.Ask);
     private void QSay_Click(object sender, RoutedEventArgs e) => _viewModel.SetQMode(DynamicIsland.Q.Core.QMode.Say);
     private void QAllow_Click(object sender, RoutedEventArgs e) => _viewModel.AcceptQDisclosure();
-    private void QCopy_Click(object sender, RoutedEventArgs e) => _viewModel.CopyQResponse();
+    private async void QCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_viewModel.QCanCopyResponse) return;
+        _viewModel.CopyQResponse();
+        if (sender is not System.Windows.Controls.Button button) return;
+        var content = button.Content;
+        button.Content = "Copied";
+        await Task.Delay(1200);
+        button.Content = content;
+    }
     private void QStop_Click(object sender, RoutedEventArgs e) => _viewModel.CancelQ();
     private async void QQuickAction_Click(object sender, RoutedEventArgs e)
     {
@@ -940,8 +983,52 @@ public partial class IslandWindow : Window
         }
         catch { }
     }
+
+    private void ScheduleQTranscriptScroll()
+    {
+        if (!_sourceReady || !_qFollowLatest || !_viewModel.ShowQSurface) return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_qFollowLatest) return;
+            QTranscriptScroll.ScrollToEnd();
+            QJumpToLatestButton.Visibility = Visibility.Collapsed;
+        }, DispatcherPriority.Background);
+    }
+
+    private void QTranscriptScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer viewer) return;
+        var atLatest = viewer.ScrollableHeight <= 1 || viewer.VerticalOffset >= viewer.ScrollableHeight - 12;
+        if (e.VerticalChange != 0 && e.ExtentHeightChange == 0) _qFollowLatest = atLatest;
+        if (e.ExtentHeightChange > 0 && _qFollowLatest)
+            Dispatcher.BeginInvoke(viewer.ScrollToEnd, DispatcherPriority.Background);
+        QJumpToLatestButton.Visibility = viewer.ScrollableHeight > 8 && !_qFollowLatest
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void QJumpToLatest_Click(object sender, RoutedEventArgs e)
+    {
+        _qFollowLatest = true;
+        QTranscriptScroll.ScrollToEnd();
+        QJumpToLatestButton.Visibility = Visibility.Collapsed;
+    }
+
+    private async void QRetry_Click(object sender, RoutedEventArgs e)
+    {
+        var prompt = _viewModel.QPromptText;
+        if (string.IsNullOrWhiteSpace(prompt)) return;
+        _qFollowLatest = true;
+        QPromptBox.Clear();
+        UpdateQPromptComposer();
+        await _viewModel.SubmitQAsync(prompt);
+    }
+
     private void QNew_Click(object sender, RoutedEventArgs e)
     {
+        _qFollowLatest = true;
+        QPromptBox.Clear();
+        UpdateQPromptComposer();
         _viewModel.ClearQ();
         _ = _viewModel.StartQAsync(_qScreen.LastForegroundTarget);
     }
@@ -961,10 +1048,24 @@ public partial class IslandWindow : Window
             await SubmitQPromptAsync();
         }
     }
+
+    private void QPromptBox_TextChanged(object sender, TextChangedEventArgs e) => UpdateQPromptComposer();
+
+    private void UpdateQPromptComposer()
+    {
+        if (QPromptBox is null || QPromptPlaceholder is null || QSendButton is null) return;
+        var hasPrompt = !string.IsNullOrWhiteSpace(QPromptBox.Text);
+        QPromptPlaceholder.Visibility = hasPrompt ? Visibility.Collapsed : Visibility.Visible;
+        QSendButton.IsEnabled = hasPrompt;
+    }
+
     private async Task SubmitQPromptAsync()
     {
         var prompt = QPromptBox.Text.Trim();
         if (prompt.Length == 0) return;
+        _qFollowLatest = true;
+        QPromptBox.Clear();
+        UpdateQPromptComposer();
         await _viewModel.SubmitQAsync(prompt);
     }
 

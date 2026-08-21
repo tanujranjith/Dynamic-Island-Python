@@ -71,7 +71,12 @@ public sealed class SettingsService(LoggingService log)
 
     private static void Normalize(AppSettings settings)
     {
-        settings.SchemaVersion = Math.Max(3, settings.SchemaVersion);
+        var previousSchema = settings.SchemaVersion;
+        if (previousSchema < 4 && settings.QMaxResponseTokens == 1200)
+            settings.QMaxResponseTokens = 8192;
+        if (previousSchema < 6)
+            settings.ShowIslandInScreenshots = false;
+        settings.SchemaVersion = Math.Max(6, settings.SchemaVersion);
         settings.SelectedMediaApp = string.IsNullOrWhiteSpace(settings.SelectedMediaApp)
             ? "Automatic" : settings.SelectedMediaApp;
         settings.CollapseDelayMilliseconds = Math.Clamp(settings.CollapseDelayMilliseconds, 100, 5000);
@@ -110,7 +115,10 @@ public sealed class SettingsService(LoggingService log)
         settings.QSelectedModel = string.IsNullOrWhiteSpace(settings.QSelectedModel) ? "gpt-4o-mini" : settings.QSelectedModel.Trim();
         settings.QOllamaBaseUrl = string.IsNullOrWhiteSpace(settings.QOllamaBaseUrl) ? "http://localhost:11434/v1" : settings.QOllamaBaseUrl.TrimEnd('/');
         settings.QTimeoutSeconds = Math.Clamp(settings.QTimeoutSeconds, 10, 300);
-        settings.QMaxResponseTokens = Math.Clamp(settings.QMaxResponseTokens, 128, 4096);
+        settings.QMaxResponseTokens = Math.Clamp(settings.QMaxResponseTokens, 2048, 32768);
+        settings.QAskSystemPrompt ??= "";
+        settings.QSaySystemPrompt ??= "";
+        settings.QShortcuts ??= [];
         if (!Enum.IsDefined(settings.QuotePlacement)) settings.QuotePlacement = QuotePlacement.Off;
         if (!Enum.IsDefined(settings.QuoteRotation)) settings.QuoteRotation = QuoteRotation.Static;
         settings.QuoteSize = Math.Clamp(settings.QuoteSize, 60, 160);

@@ -61,7 +61,8 @@ public sealed record QRequest(
     IReadOnlyList<QMessage> History,
     string Model,
     bool IncludeImage,
-    int MaxResponseTokens = 1200);
+    int MaxResponseTokens = 8192,
+    string? CustomSystemPrompt = null);
 
 public abstract record QStreamEvent
 {
@@ -117,7 +118,7 @@ public interface IQSessionController : IDisposable
     Task BeginAsync(QMode mode, string providerId, string model, QScreenContext? context, CancellationToken cancellationToken = default);
     Task SubmitAsync(string prompt, QMode mode, string providerId, string model, string? credential, string? baseUrl,
         bool includeImage, Func<CancellationToken, Task<QScreenContext?>>? recapture = null,
-        CancellationToken cancellationToken = default, int maxResponseTokens = 1200);
+        CancellationToken cancellationToken = default, int maxResponseTokens = 8192, string? customSystemPrompt = null);
     void Cancel();
     void Clear();
 }

@@ -12,7 +12,7 @@ public enum QCaptureMode { ActiveWindow, ActiveMonitor }
 
 public sealed class AppSettings
 {
-    public int SchemaVersion { get; set; } = 3;
+    public int SchemaVersion { get; set; } = 6;
     public bool LaunchOnStartup { get; set; }
     public bool AlwaysOnTop { get; set; } = true;
     public bool LockPosition { get; set; }
@@ -48,8 +48,8 @@ public sealed class AppSettings
     public string SelectedMediaApp { get; set; } = "Automatic";
     public bool DebugOverlay { get; set; }
     public bool DebugLogging { get; set; }
-    // Temporary QA default: keep the Island visible in screenshots so visual bugs can be reported.
-    public bool ShowIslandInScreenshots { get; set; } = true;
+    // Exclude the Island from supported Windows screenshot and capture APIs by default.
+    public bool ShowIslandInScreenshots { get; set; }
     public bool ShowInAltTab { get; set; }
     public int CollapseDelayMilliseconds { get; set; } = 400;
     public int TopOffset { get; set; } = 2; // gap (DIP) from the top of the screen to the pill
@@ -160,7 +160,10 @@ public sealed class AppSettings
     public bool QIncludeScreenImage { get; set; } = true;
     public string QOllamaBaseUrl { get; set; } = "http://localhost:11434/v1";
     public int QTimeoutSeconds { get; set; } = 90;
-    public int QMaxResponseTokens { get; set; } = 1200;
+    public int QMaxResponseTokens { get; set; } = 8192;
+    public string QAskSystemPrompt { get; set; } = "";
+    public string QSaySystemPrompt { get; set; } = "";
+    public List<QShortcut> QShortcuts { get; set; } = [];
     public bool QDisclosureAccepted { get; set; }
 
     // ===== Battery warnings =====

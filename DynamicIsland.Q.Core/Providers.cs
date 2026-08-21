@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 
@@ -36,6 +37,18 @@ internal static class ProviderJson
             var text = JsonString(direct, "content");
             if (text.Length > 0) yield return text;
         }
+    }
+
+    public static bool HasReasoning(JsonElement root)
+    {
+        if (!root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array) return false;
+        foreach (var choice in choices.EnumerateArray())
+        {
+            if (!choice.TryGetProperty("delta", out var delta) || delta.ValueKind != JsonValueKind.Object) continue;
+            if (JsonString(delta, "reasoning").Length > 0 || JsonString(delta, "reasoning_content").Length > 0) return true;
+            if (delta.TryGetProperty("reasoning_details", out var details) && details.ValueKind == JsonValueKind.Array && details.GetArrayLength() > 0) return true;
+        }
+        return false;
     }
 }
 
@@ -115,7 +128,7 @@ public abstract class HttpQProvider(HttpClient? httpClient = null) : IQProvider
 
     protected static object[] OpenAiMessages(QRequest request)
     {
-        var messages = new List<object> { new { role = "system", content = QPromptComposer.SystemPrompt(request.Mode) } };
+        var messages = new List<object> { new { role = "system", content = QPromptComposer.SystemPrompt(request) } };
         foreach (var item in request.History) messages.Add(new { role = item.Role, content = item.Content });
         if (request.ScreenContext is { } context && request.IncludeImage && context.PngBytes is { Length: > 0 })
         {
@@ -131,19 +144,42 @@ public abstract class HttpQProvider(HttpClient? httpClient = null) : IQProvider
     }
 
     protected async IAsyncEnumerable<QStreamEvent> StreamOpenAiCompatibleAsync(QRequest request, string? credential,
-        string? baseUrl, string fallback, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        string? baseUrl, string fallback, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, object?>? additionalBody = null)
     {
         var endpoint = Endpoint(baseUrl, fallback, "/chat/completions");
-        using var message = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = Json(new { model = request.Model, messages = OpenAiMessages(request), stream = true, temperature = 0.2, max_tokens = request.MaxResponseTokens } ) };
+        var body = new Dictionary<string, object?>
+        {
+            ["model"] = request.Model,
+            ["messages"] = OpenAiMessages(request),
+            ["stream"] = true,
+            ["temperature"] = 0.2,
+            ["max_tokens"] = request.MaxResponseTokens
+        };
+        if (additionalBody is not null)
+            foreach (var item in additionalBody) body[item.Key] = item.Value;
+        using var message = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = Json(body) };
         AddBearer(message, credential);
         message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
         using var response = await Http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
         yield return new QStreamEvent.Started();
+        var sawText = false;
+        var sawReasoning = false;
         await foreach (var data in SseDataAsync(response, cancellationToken).ConfigureAwait(false))
         {
             using var json = JsonDocument.Parse(data);
-            foreach (var text in ProviderJson.TextValues(json.RootElement)) yield return new QStreamEvent.Text(text);
+            sawReasoning |= ProviderJson.HasReasoning(json.RootElement);
+            foreach (var text in ProviderJson.TextValues(json.RootElement))
+            {
+                sawText = true;
+                yield return new QStreamEvent.Text(text);
+            }
+        }
+        if (!sawText && sawReasoning)
+        {
+            yield return new QStreamEvent.Failed("The model used its response budget for reasoning but did not return a final answer. Retry with a larger token budget or lower reasoning effort.");
+            yield break;
         }
         yield return new QStreamEvent.Completed();
     }
@@ -172,9 +208,98 @@ public sealed class XaiQProvider(HttpClient? httpClient = null) : HttpQProvider(
 
 public sealed class OpenRouterQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
 {
+    private sealed record ReasoningProfile(bool Mandatory, bool DefaultEnabled, string? DefaultEffort,
+        string[] SupportedEfforts, bool SupportsMaxTokens);
+
+    private readonly ConcurrentDictionary<string, ReasoningProfile> _reasoningProfiles = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _modelLoadGate = new(1, 1);
+    private bool _profilesLoaded;
+
     public override QProviderInfo Info { get; } = new("openrouter", "OpenRouter", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery, "openai/gpt-4o-mini", "https://openrouter.ai/api/v1");
-    public override IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl, CancellationToken cancellationToken) =>
-        StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken);
+
+    public override async Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, Endpoint(Info.DefaultBaseUrl, Info.DefaultBaseUrl!, "/models"));
+        AddBearer(request, credential);
+        using var response = await Http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        var models = new List<QModelInfo>();
+        if (json.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+            foreach (var item in data.EnumerateArray())
+            {
+                var id = ProviderJson.JsonString(item, "id");
+                if (id.Length == 0) continue;
+                var name = ProviderJson.JsonString(item, "name");
+                var capabilities = QProviderCapabilities.Text | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery;
+                if (item.TryGetProperty("architecture", out var architecture) &&
+                    architecture.TryGetProperty("input_modalities", out var modalities) &&
+                    modalities.ValueKind == JsonValueKind.Array && modalities.EnumerateArray().Any(v => string.Equals(v.GetString(), "image", StringComparison.OrdinalIgnoreCase)))
+                    capabilities |= QProviderCapabilities.Images;
+                models.Add(new QModelInfo(id, name.Length == 0 ? id : name, capabilities, string.Equals(id, Info.DefaultModel, StringComparison.OrdinalIgnoreCase)));
+                if (TryReadReasoningProfile(item, out var profile)) _reasoningProfiles[id] = profile;
+            }
+        _profilesLoaded = true;
+        if (models.Count == 0) models.Add(new QModelInfo(Info.DefaultModel, Info.DefaultModel, Info.Capabilities, true));
+        return models;
+    }
+
+    public override async IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var profile = await GetReasoningProfileAsync(request.Model, credential, cancellationToken).ConfigureAwait(false);
+        var extra = BuildReasoningBody(profile, request.MaxResponseTokens);
+        await foreach (var item in StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken, extra).ConfigureAwait(false))
+            yield return item;
+    }
+
+    private async Task<ReasoningProfile?> GetReasoningProfileAsync(string model, string? credential, CancellationToken cancellationToken)
+    {
+        if (_reasoningProfiles.TryGetValue(model, out var profile)) return profile;
+        if (!_profilesLoaded)
+        {
+            await _modelLoadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!_profilesLoaded) await GetModelsAsync(credential, cancellationToken).ConfigureAwait(false);
+            }
+            finally { _modelLoadGate.Release(); }
+        }
+        return _reasoningProfiles.TryGetValue(model, out profile) ? profile : null;
+    }
+
+    private static bool TryReadReasoningProfile(JsonElement model, out ReasoningProfile profile)
+    {
+        profile = default!;
+        if (!model.TryGetProperty("reasoning", out var reasoning) || reasoning.ValueKind != JsonValueKind.Object) return false;
+        var mandatory = reasoning.TryGetProperty("mandatory", out var mandatoryValue) && mandatoryValue.ValueKind == JsonValueKind.True;
+        var defaultEnabled = reasoning.TryGetProperty("default_enabled", out var enabledValue) && enabledValue.ValueKind == JsonValueKind.True;
+        var defaultEffort = ProviderJson.JsonString(reasoning, "default_effort");
+        var supportsMaxTokens = reasoning.TryGetProperty("supports_max_tokens", out var maxValue) && maxValue.ValueKind == JsonValueKind.True;
+        var efforts = reasoning.TryGetProperty("supported_efforts", out var effortsValue) && effortsValue.ValueKind == JsonValueKind.Array
+            ? effortsValue.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.String).Select(v => v.GetString()!).ToArray()
+            : [];
+        profile = new ReasoningProfile(mandatory, defaultEnabled, defaultEffort.Length == 0 ? null : defaultEffort, efforts, supportsMaxTokens);
+        return true;
+    }
+
+    private static IReadOnlyDictionary<string, object?>? BuildReasoningBody(ReasoningProfile? profile, int maxResponseTokens)
+    {
+        if (profile is null || (!profile.Mandatory && !profile.DefaultEnabled)) return null;
+        var reasoning = new Dictionary<string, object?> { ["exclude"] = true };
+        if (profile.SupportsMaxTokens)
+        {
+            reasoning["max_tokens"] = Math.Clamp(maxResponseTokens / 4, 1024, Math.Max(1024, maxResponseTokens - 1024));
+        }
+        else
+        {
+            var preference = new[] { "minimal", "low", "medium", "high", "xhigh", "max" };
+            var effort = preference.FirstOrDefault(candidate => profile.SupportedEfforts.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                ?? profile.DefaultEffort ?? "low";
+            reasoning["effort"] = effort;
+        }
+        return new Dictionary<string, object?> { ["reasoning"] = reasoning };
+    }
 }
 
 public sealed class DeepSeekQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
@@ -202,7 +327,7 @@ public sealed class AnthropicQProvider(HttpClient? httpClient = null) : HttpQPro
         if (request.IncludeImage && request.ScreenContext?.PngBytes is { Length: > 0 } image)
             content.Add(new { type = "image", source = new { type = "base64", media_type = "image/png", data = Convert.ToBase64String(image) } });
         content.Add(new { type = "text", text = TextPrompt(request) });
-        var body = new { model = request.Model, max_tokens = request.MaxResponseTokens, system = QPromptComposer.SystemPrompt(request.Mode), messages = new[] { new { role = "user", content } }, stream = true };
+        var body = new { model = request.Model, max_tokens = request.MaxResponseTokens, system = QPromptComposer.SystemPrompt(request), messages = new[] { new { role = "user", content } }, stream = true };
         using var message = new HttpRequestMessage(HttpMethod.Post, Endpoint(baseUrl, Info.DefaultBaseUrl!, "/v1/messages")) { Content = Json(body) };
         if (!string.IsNullOrWhiteSpace(credential)) message.Headers.TryAddWithoutValidation("x-api-key", credential);
         message.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
@@ -234,7 +359,7 @@ public sealed class GeminiQProvider(HttpClient? httpClient = null) : HttpQProvid
         var parts = new List<object> { new { text = TextPrompt(request) } };
         if (request.IncludeImage && request.ScreenContext?.PngBytes is { Length: > 0 } image)
             parts.Add(new { inline_data = new { mime_type = "image/png", data = Convert.ToBase64String(image) } });
-        var body = new { system_instruction = new { parts = new[] { new { text = QPromptComposer.SystemPrompt(request.Mode) } } }, generationConfig = new { maxOutputTokens = request.MaxResponseTokens, temperature = 0.2 }, contents = new[] { new { role = "user", parts } } };
+        var body = new { system_instruction = new { parts = new[] { new { text = QPromptComposer.SystemPrompt(request) } } }, generationConfig = new { maxOutputTokens = request.MaxResponseTokens, temperature = 0.2 }, contents = new[] { new { role = "user", parts } } };
         var endpoint = Endpoint(baseUrl, Info.DefaultBaseUrl!, $"/v1beta/models/{Uri.EscapeDataString(request.Model)}:streamGenerateContent?alt=sse&key={Uri.EscapeDataString(credential)}");
         using var message = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = Json(body) };
         message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));

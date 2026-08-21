@@ -72,6 +72,21 @@ public class ViewModelNotificationTests
     }
 
     [Fact]
+    public void Q_ContainsChatExperienceKeys()
+    {
+        var q = ViewModelNotificationGroups.QProperties;
+        Assert.Contains("QHeaderStatusText", q);
+        Assert.Contains("QResponseDisplay", q);
+        Assert.Contains("QHasPrompt", q);
+        Assert.Contains("QCanStop", q);
+        Assert.Contains("QCanCopyResponse", q);
+        Assert.Contains("QCanRetry", q);
+        Assert.Contains("QShowResponseActions", q);
+        Assert.Contains("QShortcuts", q);
+        Assert.Contains("QHasShortcuts", q);
+    }
+
+    [Fact]
     public void Battery_ContainsBatteryKeys()
     {
         var batt = ViewModelNotificationGroups.BatteryProperties;

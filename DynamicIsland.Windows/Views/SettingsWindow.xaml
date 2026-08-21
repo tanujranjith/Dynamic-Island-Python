@@ -520,10 +520,45 @@
                             <Border Style="{StaticResource LastPreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Ollama base URL" Style="{StaticResource RowTitle}" /><TextBox Grid.Column="1" Style="{StaticResource FieldText}" Text="{Binding QOllamaBaseUrl, UpdateSourceTrigger=LostFocus}" /></Grid></Border>
                         </StackPanel></Border>
                         <Border Style="{StaticResource PreferenceRow}" Margin="0,12,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{Binding QConnectionStatus}" Style="{StaticResource RowDescription}" VerticalAlignment="Center" /><Button Grid.Column="1" Content="Test connection" Command="{Binding TestQCommand}" Style="{StaticResource ActionButton}" /></Grid></Border>
+                        <TextBlock Text="SYSTEM PROMPTS" Style="{StaticResource GroupLabel}" />
+                        <Border Style="{StaticResource InsetGroup}"><StackPanel>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions><TextBlock Text="Ask instructions" Style="{StaticResource RowTitle}" /><TextBlock Grid.Row="1" Text="Optional instructions added after Q’s built-in Ask behavior." Style="{StaticResource RowDescription}" /><TextBox Grid.RowSpan="2" Grid.Column="1" Width="300" Height="86" Margin="16,0,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Style="{StaticResource FieldText}" Text="{Binding QAskSystemPrompt, UpdateSourceTrigger=LostFocus}" /></Grid></Border>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition /><RowDefinition Height="Auto" /></Grid.RowDefinitions><TextBlock Text="Say instructions" Style="{StaticResource RowTitle}" /><TextBlock Grid.Row="1" Text="Optional instructions added after Q’s built-in Say behavior." Style="{StaticResource RowDescription}" /><TextBox Grid.RowSpan="2" Grid.Column="1" Width="300" Height="86" Margin="16,0,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Style="{StaticResource FieldText}" Text="{Binding QSaySystemPrompt, UpdateSourceTrigger=LostFocus}" /></Grid></Border>
+                            <Border Style="{StaticResource LastPreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Restore built-in prompts" Style="{StaticResource RowTitle}" /><Button Grid.Column="1" Content="Reset" Command="{Binding ResetQPromptsCommand}" Style="{StaticResource ActionButton}" /></Grid></Border>
+                        </StackPanel></Border>
+                        <TextBlock Text="QUICK SHORTCUTS" Style="{StaticResource GroupLabel}" />
+                        <Border Style="{StaticResource InsetGroup}"><StackPanel>
+                            <TextBlock Text="Create one-click prompt buttons for Q chat." Margin="16,14,16,10" Style="{StaticResource RowDescription}" />
+                            <ItemsControl ItemsSource="{Binding QShortcutList}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="10,0,10,10" Padding="12" Background="#FF121923" BorderBrush="#FF29364A" BorderThickness="1" CornerRadius="12">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <StackPanel Margin="0,0,10,0">
+                                                    <TextBlock Text="Button name" Style="{StaticResource RowDescription}" />
+                                                    <TextBox Style="{StaticResource FieldText}" Text="{Binding Name, UpdateSourceTrigger=LostFocus}" ToolTip="Text shown on the Q button" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                                                    <TextBlock Text="Underlying prompt" Style="{StaticResource RowDescription}" />
+                                                    <TextBox Height="54" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Style="{StaticResource FieldText}" Text="{Binding Prompt, UpdateSourceTrigger=LostFocus}" ToolTip="Prompt sent when the button is clicked" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Bottom" Orientation="Horizontal">
+                                                    <Button Content="↑" Command="{Binding DataContext.MoveQShortcutUpCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" Style="{StaticResource ActionButton}" Width="32" Padding="0" Margin="0,0,5,0" ToolTip="Move up" />
+                                                    <Button Content="↓" Command="{Binding DataContext.MoveQShortcutDownCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" Style="{StaticResource ActionButton}" Width="32" Padding="0" Margin="0,0,5,0" ToolTip="Move down" />
+                                                    <Button Content="Remove" Command="{Binding DataContext.RemoveQShortcutCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" Style="{StaticResource ActionButton}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="＋ Add shortcut" Command="{Binding AddQShortcutCommand}" Style="{StaticResource ActionButton}" HorizontalAlignment="Left" Margin="16,0,16,14" />
+                        </StackPanel></Border>
                         <TextBlock Text="REQUEST LIMITS" Style="{StaticResource GroupLabel}" />
                         <Border Style="{StaticResource InsetGroup}"><StackPanel>
                             <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Timeout seconds" Style="{StaticResource RowTitle}" /><Slider Grid.Column="1" Style="{StaticResource FieldSlider}" Minimum="10" Maximum="300" Value="{Binding QTimeoutSeconds}" /></Grid></Border>
-                            <Border Style="{StaticResource LastPreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Maximum response tokens" Style="{StaticResource RowTitle}" /><Slider Grid.Column="1" Style="{StaticResource FieldSlider}" Minimum="128" Maximum="4096" Value="{Binding QMaxResponseTokens}" /></Grid></Border>
+                            <Border Style="{StaticResource LastPreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Maximum response tokens" Style="{StaticResource RowTitle}" /><TextBlock Text="Includes hidden reasoning tokens. Default: 8,192." Style="{StaticResource RowDescription}" /></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal"><TextBlock Width="56" Margin="0,0,10,0" Text="{Binding QMaxResponseTokens, StringFormat={}{0:N0}}" Foreground="#FF9DA8B8" VerticalAlignment="Center" TextAlignment="Right" /><Slider Style="{StaticResource FieldSlider}" Minimum="2048" Maximum="32768" TickFrequency="512" IsSnapToTickEnabled="True" Value="{Binding QMaxResponseTokens}" /></StackPanel></Grid></Border>
                         </StackPanel></Border>
                     </StackPanel>
 
@@ -556,7 +591,7 @@
                         <TextBlock Text="DEVELOPER" Style="{StaticResource GroupLabel}" />
                         <Border Style="{StaticResource InsetGroup}"><StackPanel>
                             <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Debug overlay" Style="{StaticResource RowTitle}" /><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding DebugOverlay}" /></Grid></Border>
-                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Show Island in screenshots" Style="{StaticResource RowTitle}" /><TextBlock Text="Keep the Island visible in screenshots while Q is being stabilized." Style="{StaticResource RowDescription}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowIslandInScreenshots}" /></Grid></Border>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Show Island in screenshots" Style="{StaticResource RowTitle}" /><TextBlock Text="Turn on only when you want the Island included in screenshots; off excludes it where Windows supports capture affinity." Style="{StaticResource RowDescription}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowIslandInScreenshots}" /></Grid></Border>
                             <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Debug logging" Style="{StaticResource RowTitle}" /><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding DebugLogging}" /></Grid></Border>
                             <Border Style="{StaticResource LastPreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Show island in Alt-Tab" Style="{StaticResource RowTitle}" /><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowInAltTab}" /></Grid></Border>
                         </StackPanel></Border>
