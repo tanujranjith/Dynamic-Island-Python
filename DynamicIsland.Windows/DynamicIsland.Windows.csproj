@@ -21,6 +21,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\DynamicIsland.Q.Core\DynamicIsland.Q.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="..\README.md" Link="README.md" Pack="false" Condition="Exists('..\README.md')" />
     <None Include="..\MIGRATION_REPORT.md" Link="MIGRATION_REPORT.md" Pack="false" Condition="Exists('..\MIGRATION_REPORT.md')" />
     <Resource Include="Assets\settings-preview-backdrop.png" />

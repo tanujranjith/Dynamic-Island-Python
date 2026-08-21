@@ -14,6 +14,7 @@ public sealed class TrayService : IDisposable
     private readonly Forms.ToolStripMenuItem _clickThrough;
     private readonly AppSettings _settings;
     private readonly Action _openSettings;
+    private readonly Action _openQ;
     private readonly Action _recenter;
     private readonly Func<Task> _save;
     private readonly Action _quit;
@@ -21,11 +22,12 @@ public sealed class TrayService : IDisposable
     private readonly Func<bool> _isFocusEnabled;
     private readonly Forms.ToolStripMenuItem _focusMode;
 
-    public TrayService(AppSettings settings, Action openSettings, Action recenter,
+    public TrayService(AppSettings settings, Action openSettings, Action openQ, Action recenter,
         Func<Task> save, Action quit, Action toggleFocus, Func<bool> isFocusEnabled)
     {
         _settings = settings;
         _openSettings = openSettings;
+        _openQ = openQ;
         _recenter = recenter;
         _save = save;
         _quit = quit;
@@ -38,6 +40,7 @@ public sealed class TrayService : IDisposable
             ShowImageMargin = false
         };
         menu.Items.Add("Open Settings", null, (_, _) => OnUi(_openSettings));
+        menu.Items.Add("Ask Q", null, (_, _) => OnUi(_openQ));
         menu.Items.Add("Recenter Island", null, (_, _) => OnUi(_recenter));
         _focusMode = new Forms.ToolStripMenuItem("Focus mode") { Checked = isFocusEnabled(), CheckOnClick = false };
         _focusMode.Click += (_, _) => OnUi(_toggleFocus);

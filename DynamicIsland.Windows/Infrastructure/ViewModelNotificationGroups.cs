@@ -21,6 +21,13 @@ public static class ViewModelNotificationGroups
         "Artwork", "HasArtwork", "ShowMedia", "ScrollTitles"
     };
 
+    public static readonly IReadOnlySet<string> QProperties = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "QState", "QCurrentMode", "QStatusText", "QResponse", "QError", "QSourceText", "QCompactText",
+        "IsQActive", "ShowQSurface", "QIsAsk", "QIsSay", "QIsListening", "QNeedsConsent", "QSpeechAvailable", "QSelectedProvider", "ShowCompactMediaContent", "ShowCompactQContent",
+        "PrimaryActivity", "CompactGlyph", "CompactPrimaryText", "CompactSecondaryText"
+    };
+
     public static readonly IReadOnlySet<string> MediaProgressOnlyProperties = new HashSet<string>(StringComparer.Ordinal)
     {
         "MediaProgress", "MediaElapsedText", "MediaTimeRemaining", "MediaTrailingTimeText"

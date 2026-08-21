@@ -8,10 +8,11 @@ public enum AnimationIntensity { Reduced, Normal, Expressive }
 public enum PositionMode { TopCenter, TopLeft, Manual }
 public enum QuotePlacement { Off, Compact, Expanded, Both }
 public enum QuoteRotation { Static, EveryExpand, EveryMinute, Every5Minutes, Every15Minutes, Every30Minutes, EveryHour }
+public enum QCaptureMode { ActiveWindow, ActiveMonitor }
 
 public sealed class AppSettings
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public bool LaunchOnStartup { get; set; }
     public bool AlwaysOnTop { get; set; } = true;
     public bool LockPosition { get; set; }
@@ -148,6 +149,17 @@ public sealed class AppSettings
 
     // ===== Privacy sensors (mic/camera in-use indicator) =====
     public bool ShowPrivacyIndicators { get; set; } = true;
+
+    // ===== Q visual assistant =====
+    public bool QEnabled { get; set; } = true;
+    public string QSelectedProvider { get; set; } = "openai";
+    public string QSelectedModel { get; set; } = "gpt-4o-mini";
+    public QCaptureMode QCaptureMode { get; set; } = QCaptureMode.ActiveWindow;
+    public bool QIncludeScreenImage { get; set; } = true;
+    public string QOllamaBaseUrl { get; set; } = "http://localhost:11434/v1";
+    public int QTimeoutSeconds { get; set; } = 90;
+    public int QMaxResponseTokens { get; set; } = 1200;
+    public bool QDisclosureAccepted { get; set; }
 
     // ===== Battery warnings =====
     public bool ShowBatteryTime { get; set; }

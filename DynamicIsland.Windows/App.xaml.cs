@@ -5,6 +5,8 @@ using DynamicIsland.Windows.Services;
 using DynamicIsland.Windows.Services.Vision;
 using DynamicIsland.Windows.ViewModels;
 using DynamicIsland.Windows.Views;
+using DynamicIsland.Windows.Services.Q;
+using DynamicIsland.Q.Core;
 using System.Windows.Media;
 
 namespace DynamicIsland.Windows;
@@ -48,6 +50,10 @@ public partial class App : System.Windows.Application
     private System.Windows.Threading.DispatcherTimer? _autoLockTimer;
     private bool _autoPausedMedia;
     private Window? _privacyBlur;
+    private ScreenContextService? _qScreen;
+    private SpeechInputService? _qSpeech;
+    private DpapiSecretStore? _qSecrets;
+    private IQSessionController? _qSession;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -118,14 +124,23 @@ public partial class App : System.Windows.Application
         _notificationHistory = new NotificationHistoryService(_log);
         _privacy = new PrivacySensorService(_log);
         _clipboard = new ClipboardService(_log);
+        _qScreen = new ScreenContextService(_log);
+        _qSpeech = new SpeechInputService(_log);
+        _qSecrets = new DpapiSecretStore(_log);
+        var providers = new QProviderRegistry([
+            new OpenAiQProvider(), new AnthropicQProvider(), new GeminiQProvider(), new GroqQProvider(),
+            new XaiQProvider(), new OpenRouterQProvider(), new DeepSeekQProvider(), new OllamaQProvider()
+        ]);
+        _qSession = new QSessionController(providers);
         _vision.Changed += (_, state) => Dispatcher.BeginInvoke(() => HandleVisionAutomations(state));
         _battery.LowBattery += (_, pct) => Dispatcher.BeginInvoke(() =>
             _tray?.ShowNotification("Battery low", $"{pct}% remaining — plug in soon."));
         _position = new WindowPositionService();
         _islandViewModel = new IslandViewModel(_settings, _media, _audio, _battery, _clock, _timerAlarm, _theme,
-            _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy, _notificationHistory);
+            _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy, _notificationHistory,
+            _qSession, _qScreen, _qSpeech, _qSecrets);
         _timerViewModel = new TimerAlarmViewModel(_timerAlarm, _settings.Use24HourClock);
-        _islandWindow = new IslandWindow(_islandViewModel, _timerViewModel, _position, _settingsService, _log);
+        _islandWindow = new IslandWindow(_islandViewModel, _timerViewModel, _position, _settingsService, _log, _qScreen);
         _islandWindow.OpenSettingsRequested += (_, _) => ShowSettings();
         _islandWindow.OpenVisionRequested += (_, _) => ShowVisionSettings();
         _islandWindow.OpenClipboardRequested += (_, _) => _ = ShowClipboardAsync();
@@ -133,12 +148,12 @@ public partial class App : System.Windows.Application
         _islandWindow.Closed += (_, _) => { if (!_isShuttingDown) ShutdownApplication(); };
 
         _settingsViewModel = new SettingsViewModel(_settings, _settingsService, _startupService,
-            _vision, _visionModels, ApplySettings, Recenter, () => _settingsWindow?.Hide());
+            _vision, _visionModels, ApplySettings, Recenter, () => _settingsWindow?.Hide(), _qSecrets);
         _settingsViewModel.OpenVisionPage = ShowVisionSettings;
         _media.AvailableAppsChanged += (_, apps) => Dispatcher.BeginInvoke(() =>
             _settingsViewModel.SetAvailableApps(apps));
 
-        _tray = new TrayService(_settings, ShowSettings, Recenter, SaveAndApplyAsync, ShutdownApplication,
+        _tray = new TrayService(_settings, ShowSettings, () => _ = _islandViewModel!.StartQAsync(_qScreen!.LastForegroundTarget), Recenter, SaveAndApplyAsync, ShutdownApplication,
             ToggleFocus, () => _settings.FocusModeEnabled);
         _timerAlarm.EventRaised += (_, args) => Dispatcher.BeginInvoke(() =>
             _tray.ShowNotification(args.Title, args.Message));
@@ -156,6 +171,8 @@ public partial class App : System.Windows.Application
             ToggleFocus);
         _hotkeys.Register("Open settings", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, (uint)'S',
             ShowSettings);
+        _hotkeys.Register("Open Q", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, (uint)'Q',
+            () => _ = _islandViewModel.StartQAsync(_qScreen.LastForegroundTarget));
         _clock.Start();
         _battery.Start();
         _audio.Start();
@@ -446,6 +463,8 @@ public partial class App : System.Windows.Application
         _visionWindow?.Close();
         _settingsWindow?.Close();
         _islandViewModel?.Dispose();
+        _qSession?.Dispose();
+        _qSpeech?.Dispose();
         _vision?.Dispose();
         _weather?.Dispose();
         _sysMon?.Dispose();

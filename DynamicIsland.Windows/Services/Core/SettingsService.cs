@@ -71,7 +71,7 @@ public sealed class SettingsService(LoggingService log)
 
     private static void Normalize(AppSettings settings)
     {
-        settings.SchemaVersion = Math.Max(2, settings.SchemaVersion);
+        settings.SchemaVersion = Math.Max(3, settings.SchemaVersion);
         settings.SelectedMediaApp = string.IsNullOrWhiteSpace(settings.SelectedMediaApp)
             ? "Automatic" : settings.SelectedMediaApp;
         settings.CollapseDelayMilliseconds = Math.Clamp(settings.CollapseDelayMilliseconds, 100, 5000);
@@ -105,6 +105,12 @@ public sealed class SettingsService(LoggingService log)
         if (string.IsNullOrWhiteSpace(settings.ExpandedOrder)) settings.ExpandedOrder = "media,volume,status";
         settings.LowBatteryThreshold = Math.Clamp(settings.LowBatteryThreshold, 5, 50);
         settings.VolumeWarningThreshold = Math.Clamp(settings.VolumeWarningThreshold, 10, 100);
+        if (!Enum.IsDefined(settings.QCaptureMode)) settings.QCaptureMode = QCaptureMode.ActiveWindow;
+        settings.QSelectedProvider = string.IsNullOrWhiteSpace(settings.QSelectedProvider) ? "openai" : settings.QSelectedProvider.Trim();
+        settings.QSelectedModel = string.IsNullOrWhiteSpace(settings.QSelectedModel) ? "gpt-4o-mini" : settings.QSelectedModel.Trim();
+        settings.QOllamaBaseUrl = string.IsNullOrWhiteSpace(settings.QOllamaBaseUrl) ? "http://localhost:11434/v1" : settings.QOllamaBaseUrl.TrimEnd('/');
+        settings.QTimeoutSeconds = Math.Clamp(settings.QTimeoutSeconds, 10, 300);
+        settings.QMaxResponseTokens = Math.Clamp(settings.QMaxResponseTokens, 128, 4096);
         if (!Enum.IsDefined(settings.QuotePlacement)) settings.QuotePlacement = QuotePlacement.Off;
         if (!Enum.IsDefined(settings.QuoteRotation)) settings.QuoteRotation = QuoteRotation.Static;
         settings.QuoteSize = Math.Clamp(settings.QuoteSize, 60, 160);

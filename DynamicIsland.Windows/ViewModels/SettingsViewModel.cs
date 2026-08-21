@@ -7,6 +7,7 @@ using DynamicIsland.Windows.Infrastructure;
 using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
 using DynamicIsland.Windows.Services.Vision;
+using DynamicIsland.Windows.Services.Q;
 
 namespace DynamicIsland.Windows.ViewModels;
 
@@ -20,6 +21,7 @@ public sealed class SettingsViewModel : ObservableObject
     private readonly Action _apply;
     private readonly Action _recenter;
     private readonly Action _close;
+    private readonly IQSecretStore _qSecrets;
     private string _visionStatusLine = string.Empty;
     private bool _visionBusy;
     private BitmapImage? _cameraPreview;
@@ -33,7 +35,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     public SettingsViewModel(AppSettings settings, SettingsService settingsService,
         StartupService startupService, VisionService vision, VisionModelManager visionModels,
-        Action apply, Action recenter, Action close)
+        Action apply, Action recenter, Action close, IQSecretStore qSecrets)
     {
         _settings = settings;
         _settingsService = settingsService;
@@ -43,6 +45,7 @@ public sealed class SettingsViewModel : ObservableObject
         _apply = apply;
         _recenter = recenter;
         _close = close;
+        _qSecrets = qSecrets;
         SaveCommand = new RelayCommand(() => _ = SaveAsync());
         RecenterCommand = new RelayCommand(() => { _recenter(); _ = SaveAsync(false); });
         CloseCommand = new RelayCommand(() => { _ = SaveAsync(); _close(); });
@@ -374,6 +377,17 @@ public sealed class SettingsViewModel : ObservableObject
     public NotificationFilter NotificationFilterMode { get => _settings.NotificationFilterMode; set { Set(v => _settings.NotificationFilterMode = v, value); _apply(); } }
     public string NotificationAppFilter { get => _settings.NotificationAppFilter; set { Set(v => _settings.NotificationAppFilter = v ?? "", value); _apply(); } }
     public bool ShowPrivacyIndicators { get => _settings.ShowPrivacyIndicators; set { Set(v => _settings.ShowPrivacyIndicators = v, value); _apply(); } }
+    public bool QEnabled { get => _settings.QEnabled; set { Set(v => _settings.QEnabled = v, value); _apply(); } }
+    public string QSelectedProvider { get => _settings.QSelectedProvider; set { Set(v => _settings.QSelectedProvider = v ?? "openai", value); _apply(); } }
+    public string QSelectedModel { get => _settings.QSelectedModel; set { Set(v => _settings.QSelectedModel = v ?? "gpt-4o-mini", value); _apply(); } }
+    public string QApiKey { get => _qSecrets.Get(_settings.QSelectedProvider) ?? ""; set { _qSecrets.Set(_settings.QSelectedProvider, value); RaisePropertyChanged(); } }
+    public Array QProviderOptions => new[] { "openai", "anthropic", "gemini", "groq", "xai", "openrouter", "deepseek", "ollama" };
+    public Array QCaptureModeOptions => Enum.GetValues<QCaptureMode>();
+    public QCaptureMode QCaptureMode { get => _settings.QCaptureMode; set { Set(v => _settings.QCaptureMode = v, value); _apply(); } }
+    public bool QIncludeScreenImage { get => _settings.QIncludeScreenImage; set { Set(v => _settings.QIncludeScreenImage = v, value); _apply(); } }
+    public string QOllamaBaseUrl { get => _settings.QOllamaBaseUrl; set { Set(v => _settings.QOllamaBaseUrl = v ?? "http://localhost:11434/v1", value); _apply(); } }
+    public int QTimeoutSeconds { get => _settings.QTimeoutSeconds; set => SetSize(v => _settings.QTimeoutSeconds = v, value, 10, 300); }
+    public int QMaxResponseTokens { get => _settings.QMaxResponseTokens; set => SetSize(v => _settings.QMaxResponseTokens = v, value, 128, 4096); }
     public bool ShowClipboard { get => _settings.ShowClipboard; set { Set(v => _settings.ShowClipboard = v, value); _apply(); } }
     public bool ShowBatteryTime { get => _settings.ShowBatteryTime; set { Set(v => _settings.ShowBatteryTime = v, value); _apply(); } }
     public bool LowBatteryWarning { get => _settings.LowBatteryWarning; set { Set(v => _settings.LowBatteryWarning = v, value); _apply(); } }
@@ -473,6 +487,7 @@ public sealed class SettingsViewModel : ObservableObject
             new SettingsSection("appearance", "Appearance", Glyph(0xE790)),
             new SettingsSection("position", "Position", Glyph(0xE809)),
             new SettingsSection("activities", "Live Activities", Glyph(0xE753)),
+            new SettingsSection("q", "Q Assistant", Glyph(0xE720)),
             new SettingsSection("advanced", "Advanced", Glyph(0xE9F5)),
         };
         var q = _searchText?.Trim() ?? "";

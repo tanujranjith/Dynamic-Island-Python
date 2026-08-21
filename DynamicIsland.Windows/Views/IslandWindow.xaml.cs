@@ -8,6 +8,7 @@ using System.Windows.Threading;
 using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
 using DynamicIsland.Windows.ViewModels;
+using DynamicIsland.Windows.Services.Q;
 using Microsoft.Win32;
 
 namespace DynamicIsland.Windows.Views;
@@ -19,6 +20,7 @@ public partial class IslandWindow : Window
     private readonly SettingsService _settingsService;
     private readonly LoggingService _log;
     private readonly TimerAlarmViewModel _timerViewModel;
+    private readonly ScreenContextService _qScreen;
     private readonly DispatcherTimer _collapseTimer = new();
     private readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromSeconds(4) };
     private readonly DispatcherTimer _fullscreenTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -42,7 +44,7 @@ public partial class IslandWindow : Window
     public event EventHandler? OpenClipboardRequested;
     public event EventHandler? RecenterRequested;
 
-    public IslandWindow(IslandViewModel viewModel, TimerAlarmViewModel timerViewModel, WindowPositionService position, SettingsService settingsService, LoggingService log)
+    public IslandWindow(IslandViewModel viewModel, TimerAlarmViewModel timerViewModel, WindowPositionService position, SettingsService settingsService, LoggingService log, ScreenContextService qScreen)
     {
         InitializeComponent();
         DataContext = _viewModel = viewModel;
@@ -55,6 +57,7 @@ public partial class IslandWindow : Window
         _position = position;
         _settingsService = settingsService;
         _log = log;
+        _qScreen = qScreen;
         _collapseTimer.Tick += (_, _) =>
         {
             _collapseTimer.Stop();
@@ -65,12 +68,13 @@ public partial class IslandWindow : Window
             _idleTimer.Stop();
             if (_viewModel.Settings.IdleDimming && !GlassShell.IsMouseOver) SetDimmed(true);
         };
-        _fullscreenTimer.Tick += (_, _) => { CheckFullscreen(); CheckFollowScreen(); EnsureHealthy(); };
+        _fullscreenTimer.Tick += (_, _) => { CheckFullscreen(); CheckFollowScreen(); EnsureHealthy(); _qScreen.RememberForeground(new System.Windows.Interop.WindowInteropHelper(this).Handle); };
         _fullscreenTimer.Start();
         SourceInitialized += (_, _) =>
         {
             _sourceReady = true;
             _position.ApplyWindowStyles(this, _viewModel.Settings, compact: true);
+            Interop.NativeMethods.SetWindowDisplayAffinity(new System.Windows.Interop.WindowInteropHelper(this).Handle, Interop.NativeMethods.WdaExcludeFromCapture);
             ApplyLayout(animate: false);
             ApplyFrost();
         };
@@ -80,6 +84,7 @@ public partial class IslandWindow : Window
             ApplyFrost();
             // Re-fit the pill whenever the expanded content's size changes (live CPU/RAM/weather/title text).
             ExpandedContent.SizeChanged += (_, _) => UpdateAutoGrow();
+            QContent.SizeChanged += (_, _) => UpdateAutoGrow();
             StatsExpandedContent.SizeChanged += (_, _) => UpdateAutoGrow();
             StatsOverlay.SizeChanged += (_, _) => UpdateAutoGrow();
         };
@@ -168,6 +173,13 @@ public partial class IslandWindow : Window
                 // Compact visual mode must update immediately without a full morph.
                 ApplyVisualMode();
             }
+        }
+        else if (e.PropertyName == nameof(IslandViewModel.IsQActive) || e.PropertyName == nameof(IslandViewModel.ShowQSurface))
+        {
+            if (_timerPanelOpen) return;
+            ApplyVisualMode();
+            if (_viewModel.IsExpanded) UpdateAutoGrow();
+            if (_viewModel.ShowQSurface) Dispatcher.BeginInvoke(() => { QPromptBox.Focus(); Keyboard.Focus(QPromptBox); });
         }
         else if (e.PropertyName == nameof(IslandViewModel.BannerSeq))
         {
@@ -263,7 +275,7 @@ public partial class IslandWindow : Window
             // StatsOverlay lives inside ExpandedContent, so this measures the exact surface the
             // user sees in either visual style.  The old detached Stats grid is intentionally no
             // longer part of sizing or visibility decisions.
-            var content = ExpandedContent;
+            var content = _viewModel.ShowQSurface ? QContent : ExpandedContent;
             content.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
             var d = content.DesiredSize;
             var w = Math.Clamp(d.Width + 2, m.eW, CanvasW - 24);
@@ -325,6 +337,7 @@ public partial class IslandWindow : Window
     {
         var apple = _viewModel.IsAppleStyle;
         var expanded = _viewModel.IsExpanded;
+        var q = _viewModel.ShowQSurface;
         SetModeContent(CompactContent, apple && !expanded && !_timerPanelOpen);
         // The full Apple activity deck is the stable shared expanded surface. The compact Stats
         // layout still provides the dense glanceable alternative, while this prevents Stats mode
@@ -332,11 +345,12 @@ public partial class IslandWindow : Window
         // TimerPanelContent is intentionally hosted inside the shared expanded surface so it uses
         // the same clipped island material. Keep that parent alive while the timer panel is open;
         // the timer's opaque black layer covers the media deck underneath.
-        SetModeContent(ExpandedContent, expanded || _timerPanelOpen);
+        SetModeContent(ExpandedContent, (expanded || _timerPanelOpen) && !q);
+        SetModeContent(QContent, expanded && q);
         SetModeContent(StatsCompactContent, !apple && !expanded && !_timerPanelOpen);
         SetModeContent(StatsExpandedContent, false);
         SetModeContent(StatsOverlay, !apple && expanded && !_timerPanelOpen);
-        SetModeContent(TimerPanelContent, _timerPanelOpen);
+        SetModeContent(TimerPanelContent, _timerPanelOpen && !q);
     }
 
     // Switching visual modes while the shell is expanded previously changed Visibility only. If an
@@ -351,7 +365,7 @@ public partial class IslandWindow : Window
     }
 
     private Grid ActiveCompactContent => _viewModel.IsStatsStyle ? StatsCompactContent : CompactContent;
-    private Grid ActiveExpandedContent => _timerPanelOpen ? TimerPanelContent : ExpandedContent;
+    private Grid ActiveExpandedContent => _viewModel.ShowQSurface ? QContent : _timerPanelOpen ? TimerPanelContent : ExpandedContent;
 
     // The drop shadow is the most expensive part of each software-composited animation frame. Retain it
     // visually, but use WPF's lower-cost rendering mode until the zoom lands.
@@ -855,6 +869,45 @@ public partial class IslandWindow : Window
     }
     private void SettingsButton_Click(object sender, RoutedEventArgs e) => OpenSettingsRequested?.Invoke(this, EventArgs.Empty);
     private void RecenterButton_Click(object sender, RoutedEventArgs e) => RecenterRequested?.Invoke(this, EventArgs.Empty);
+
+    private void QButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = _viewModel.StartQAsync(_qScreen.LastForegroundTarget);
+        e.Handled = true;
+    }
+
+    private void QAsk_Click(object sender, RoutedEventArgs e) => _viewModel.SetQMode(DynamicIsland.Q.Core.QMode.Ask);
+    private void QSay_Click(object sender, RoutedEventArgs e) => _viewModel.SetQMode(DynamicIsland.Q.Core.QMode.Say);
+    private void QAllow_Click(object sender, RoutedEventArgs e) => _viewModel.AcceptQDisclosure();
+    private void QCopy_Click(object sender, RoutedEventArgs e) => _viewModel.CopyQResponse();
+    private void QStop_Click(object sender, RoutedEventArgs e) => _viewModel.CancelQ();
+    private void QNew_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.ClearQ();
+        _ = _viewModel.StartQAsync(_qScreen.LastForegroundTarget);
+    }
+    private void QClose_Click(object sender, RoutedEventArgs e) => _viewModel.ClearQ();
+    private async void QMic_Click(object sender, RoutedEventArgs e)
+    {
+        var text = await _viewModel.DictateQAsync();
+        if (!string.IsNullOrWhiteSpace(text)) QPromptBox.Text = text;
+        QPromptBox.Focus();
+    }
+    private async void QSend_Click(object sender, RoutedEventArgs e) => await SubmitQPromptAsync();
+    private async void QPromptBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift)
+        {
+            e.Handled = true;
+            await SubmitQPromptAsync();
+        }
+    }
+    private async Task SubmitQPromptAsync()
+    {
+        var prompt = QPromptBox.Text.Trim();
+        if (prompt.Length == 0) return;
+        await _viewModel.SubmitQAsync(prompt);
+    }
 
     private void SystemEventsOnDisplaySettingsChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() =>
         _position.PositionInitial(this, _viewModel.Settings));

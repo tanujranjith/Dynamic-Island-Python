@@ -8,6 +8,7 @@ using System.Windows.Threading;
 using DynamicIsland.Windows.Infrastructure;
 using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
+using DynamicIsland.Q.Core;
 using MediaBrush = System.Windows.Media.Brush;
 
 namespace DynamicIsland.Windows.ViewModels;
@@ -72,6 +73,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private byte[]? _pendingPreviewFrame;
     private int _previewDispatchPending;
     private bool _previewRetained;
+    private readonly IQSessionController _qSession;
+    private readonly IQScreenContextService _qScreen;
+    private readonly IQSpeechInputService _qSpeech;
+    private readonly Services.Q.IQSecretStore _qSecrets;
+    private QSessionSnapshot _qSnapshot = new(QRunState.Idle, QMode.Ask, string.Empty, string.Empty, "Ready", null, null, "", "");
+    private nint _qTargetWindow;
 
     public IslandViewModel(AppSettings settings, MediaSessionService mediaService,
         AudioSessionService audioService, BatteryService batteryService, ClockService clockService,
@@ -80,7 +87,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         SystemMonitorService systemMonitorService, AudioSpectrumService spectrumService,
         StocksService stocksService, CalendarService calendarService,
         NotificationListenerService notificationService, PrivacySensorService privacyService,
-        NotificationHistoryService notificationHistoryService)
+        NotificationHistoryService notificationHistoryService,
+        IQSessionController qSession, IQScreenContextService qScreen, IQSpeechInputService qSpeech,
+        Services.Q.IQSecretStore qSecrets)
     {
         Settings = settings;
         _mediaService = mediaService;
@@ -98,6 +107,10 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _notificationService = notificationService;
         _privacyService = privacyService;
         _notificationHistoryService = notificationHistoryService;
+        _qSession = qSession;
+        _qScreen = qScreen;
+        _qSpeech = qSpeech;
+        _qSecrets = qSecrets;
 
         PreviousCommand = new RelayCommand(() => _ = _mediaService.PreviousAsync(), () => Media.CanPrevious);
         PlayPauseCommand = new RelayCommand(() => _ = _mediaService.TogglePlayPauseAsync(), () => Media.CanPlayPause);
@@ -158,10 +171,37 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _clockService.Tick += OnClockTick;
         _timerAlarmService.Changed += OnTimerAlarmChanged;
         _themeService.SystemThemeChanged += OnSystemThemeChanged;
+        _qSession.Changed += OnQChanged;
         ApplySettings();
     }
 
     public AppSettings Settings { get; }
+    public QRunState QState => _qSnapshot.State;
+    public QMode QCurrentMode => _qSnapshot.Mode;
+    public string QStatusText => _qSnapshot.Status;
+    public string QResponse => _qSnapshot.Response;
+    public string QError => _qSnapshot.Error ?? string.Empty;
+    public string QSourceText => _qSnapshot.Context is { } context
+        ? string.IsNullOrWhiteSpace(context.ProcessName) ? "Active window" : context.ProcessName
+        : "Screen context ready";
+    public string QCompactText => QState switch
+    {
+        QRunState.Capturing => "Q · Reading…",
+        QRunState.Thinking or QRunState.Streaming => "Q · Thinking…",
+        QRunState.Complete => string.IsNullOrWhiteSpace(QResponse) ? "Q · Complete" : QResponse.Replace(Environment.NewLine, " "),
+        QRunState.Error => "Q · Try again",
+        _ => "Q · Ready"
+    };
+    public bool IsQActive => QState != QRunState.Idle;
+    public bool ShowQSurface => IsQActive && PrimaryActivity is not (IslandActivity.Alarm or IslandActivity.Timer);
+    public bool QIsAsk => QCurrentMode == DynamicIsland.Q.Core.QMode.Ask;
+    public bool QIsSay => QCurrentMode == DynamicIsland.Q.Core.QMode.Say;
+    public bool QIsListening => QState == QRunState.Listening;
+    public bool QNeedsConsent => !Settings.QDisclosureAccepted;
+    public bool QSpeechAvailable => _qSpeech.IsAvailable;
+    public string QSelectedProvider => Settings.QSelectedProvider;
+    public bool ShowCompactMediaContent => ShowMedia && !IsQActive;
+    public bool ShowCompactQContent => IsQActive;
     public MediaInfo Media { get => _media; private set { if (SetProperty(ref _media, value)) UpdateArtwork(value.Artwork); } }
     public AudioState Audio { get => _audio; private set => SetProperty(ref _audio, value); }
     public BatteryState Battery { get => _battery; private set => SetProperty(ref _battery, value); }
@@ -358,9 +398,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     // ===== Quotes =====
     public bool ShowQuotes => Settings.QuotePlacement != QuotePlacement.Off && _quotes.Length > 0;
     // Time-sensitive activities must stay visible even when compact quotes are enabled.
-    public bool ShowQuoteInCompact => ShowQuotes && PrimaryActivity is not (IslandActivity.Alarm or IslandActivity.Timer)
+    public bool ShowQuoteInCompact => ShowQuotes && PrimaryActivity is not (IslandActivity.Alarm or IslandActivity.Timer or IslandActivity.Q)
         && Settings.QuotePlacement is (QuotePlacement.Compact or QuotePlacement.Both);
-    public bool ShowQuoteInExpanded => ShowQuotes
+    public bool ShowQuoteInExpanded => !IsQActive && ShowQuotes
         && Settings.QuotePlacement is (QuotePlacement.Expanded or QuotePlacement.Both);
     public string QuoteText => ShowQuotes ? _quotes[_quoteIndex % _quotes.Length].Text : string.Empty;
     public string QuoteAuthor => ShowQuotes ? _quotes[_quoteIndex % _quotes.Length].Author : string.Empty;
@@ -575,7 +615,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _ => "No alarm"
     };
 
-    public string CompactGlyph => ShowQuoteInCompact ? "\u201C"
+    public string CompactGlyph => IsQActive ? "Q" : ShowQuoteInCompact ? "\u201C"
         : PrimaryActivity switch
         {
             IslandActivity.Alarm => "\uEA8F",
@@ -587,7 +627,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             _ => "\uE121"
         };
 
-    public string CompactPrimaryText => ShowQuoteInCompact
+    public string CompactPrimaryText => IsQActive
+        ? QCompactText
+        : ShowQuoteInCompact
         ? QuoteText
         : PrimaryActivity switch
         {
@@ -631,6 +673,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             // no longer replaces current media or status content in the main pill. Completion still
             // takes over briefly so the user cannot miss that the timer finished.
             if (timer.Phase == TimerPhase.Completed && !timer.CompletionAcknowledged) return IslandActivity.Timer;
+            if (IsQActive) return IslandActivity.Q;
             if (Audio.SystemMuted) return IslandActivity.Muted;
             if (Settings.ShowMedia && Media.HasSession) return IslandActivity.Media;
             if (Audio.ActiveAudioOutput) return IslandActivity.Audio;
@@ -669,7 +712,85 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseSettingsChanged();
         RaisePropertyChanged(nameof(PinExpanded));
         RaisePropertyChanged(nameof(UiFontFamily));
+        RaiseQProperties();
     }
+
+    public void RememberQTarget(nint targetWindow)
+    {
+        if (targetWindow != nint.Zero) _qTargetWindow = targetWindow;
+    }
+
+    public async Task StartQAsync(nint targetWindow = default)
+    {
+        if (!Settings.QEnabled) return;
+        if (targetWindow != nint.Zero) _qTargetWindow = targetWindow;
+        IsExpanded = true;
+        OnUi(() => RaiseQProperties());
+        try
+        {
+            var context = await _qScreen.CaptureAsync(_qTargetWindow, Settings.QCaptureMode == Models.QCaptureMode.ActiveMonitor ? DynamicIsland.Q.Core.QCaptureMode.ActiveMonitor : DynamicIsland.Q.Core.QCaptureMode.ActiveWindow, CancellationToken.None).ConfigureAwait(false);
+            await _qSession.BeginAsync(DynamicIsland.Q.Core.QMode.Ask, Settings.QSelectedProvider, Settings.QSelectedModel, context).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            OnUi(() => { _qSnapshot = _qSnapshot with { State = QRunState.Error, Status = "Capture failed", Error = ex.Message }; RaiseQProperties(); });
+        }
+    }
+
+    public async Task SubmitQAsync(string prompt)
+    {
+        if (!Settings.QDisclosureAccepted)
+        {
+            OnUi(() => RaiseQProperties());
+            return;
+        }
+        var baseUrl = string.Equals(Settings.QSelectedProvider, "ollama", StringComparison.OrdinalIgnoreCase) ? Settings.QOllamaBaseUrl : null;
+        var credential = _qSecrets.Get(Settings.QSelectedProvider);
+        await _qSession.SubmitAsync(prompt, _qSnapshot.Mode, Settings.QSelectedProvider, Settings.QSelectedModel, credential, baseUrl,
+            Settings.QIncludeScreenImage,
+            token => _qScreen.CaptureAsync(_qTargetWindow, Settings.QCaptureMode == Models.QCaptureMode.ActiveMonitor ? DynamicIsland.Q.Core.QCaptureMode.ActiveMonitor : DynamicIsland.Q.Core.QCaptureMode.ActiveWindow, token),
+            maxResponseTokens: Settings.QMaxResponseTokens).ConfigureAwait(false);
+    }
+
+    public async Task<string?> DictateQAsync()
+    {
+        if (!_qSpeech.IsAvailable) return null;
+        OnUi(() => _qSnapshot = _qSnapshot with { State = QRunState.Listening, Status = "Listening…", Error = null });
+        var text = await _qSpeech.DictateAsync(CancellationToken.None).ConfigureAwait(false);
+        OnUi(() => _qSnapshot = _qSnapshot with { State = QRunState.Ready, Status = string.IsNullOrWhiteSpace(text) ? "Ready for a question" : "Dictation ready", Prompt = text ?? string.Empty });
+        RaiseQProperties();
+        return text;
+    }
+
+    public void SetQMode(QMode mode)
+    {
+        OnUi(() =>
+        {
+            _qSnapshot = _qSnapshot with { Mode = mode };
+            RaiseQProperties();
+        });
+    }
+
+    public void AcceptQDisclosure()
+    {
+        Settings.QDisclosureAccepted = true;
+        _ = PersistSettingsAsync();
+        RaiseQProperties();
+    }
+
+    public void CancelQ() => _qSession.Cancel();
+    public void ClearQ() { _qSession.Clear(); IsExpanded = false; }
+    public void CopyQResponse() { if (!string.IsNullOrWhiteSpace(QResponse)) System.Windows.Clipboard.SetText(QResponse); }
+
+    private void OnQChanged(object? sender, QSessionSnapshot snapshot) => OnUi(() =>
+    {
+        _qSnapshot = snapshot;
+        RaiseQProperties();
+    });
+
+    private void RaiseQProperties() => RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QResponse), nameof(QError),
+        nameof(QSourceText), nameof(QCompactText), nameof(IsQActive), nameof(ShowQSurface), nameof(QIsAsk), nameof(QIsSay), nameof(QIsListening),
+        nameof(QNeedsConsent), nameof(QSpeechAvailable), nameof(QSelectedProvider), nameof(ShowCompactMediaContent), nameof(ShowCompactQContent));
 
     private void OnMediaChanged(object? sender, MediaInfo value) => OnUi(() =>
     {
@@ -932,7 +1053,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     });
     private void RaiseMany(params string[] names) { foreach (var n in names) RaisePropertyChanged(n); }
     private void OnTimerAlarmChanged(object? sender, EventArgs e) => OnUi(() => RaiseMany(
-        nameof(TimerText), nameof(TimerProgress), nameof(TimerRemainingProgress), nameof(ShowTimerOrb), nameof(AlarmText), nameof(PrimaryActivity),
+        nameof(TimerText), nameof(TimerProgress), nameof(TimerRemainingProgress), nameof(ShowTimerOrb), nameof(AlarmText), nameof(PrimaryActivity), nameof(ShowQSurface),
         nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText),
         nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowCompactTimerRing),
         nameof(ShowCompactRingTrack)));
@@ -1238,6 +1359,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _clockService.Tick -= OnClockTick;
         _timerAlarmService.Changed -= OnTimerAlarmChanged;
         _themeService.SystemThemeChanged -= OnSystemThemeChanged;
+        _qSession.Changed -= OnQChanged;
+        _qSession.Clear();
     }
 }
 

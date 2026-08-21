@@ -106,6 +106,12 @@ public partial class SettingsWindow : Window
 
     private void OpenTimer_Click(object sender, RoutedEventArgs e) => OpenTimerRequested?.Invoke(this, EventArgs.Empty);
 
+    private void QApiKey_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender is PasswordBox box && DataContext is SettingsViewModel settings)
+            settings.QApiKey = box.Password;
+    }
+
     // Use an explicit click handler so Done always waits for the settings file to be written before
     // hiding this modeless window. The previous fire-and-forget command could leave the panel visible.
     private async void Done_Click(object sender, RoutedEventArgs e)
@@ -128,12 +134,14 @@ public partial class SettingsWindow : Window
         AppearancePage.Visibility = key == "appearance" ? Visibility.Visible : Visibility.Collapsed;
         PositionPage.Visibility = key == "position" ? Visibility.Visible : Visibility.Collapsed;
         ActivitiesPage.Visibility = key == "activities" ? Visibility.Visible : Visibility.Collapsed;
+        QPage.Visibility = key == "q" ? Visibility.Visible : Visibility.Collapsed;
         AdvancedPage.Visibility = key == "advanced" ? Visibility.Visible : Visibility.Collapsed;
 
         ContentTab.IsChecked = key == "content";
         AppearanceTab.IsChecked = key == "appearance";
         PositionTab.IsChecked = key == "position";
         ActivitiesTab.IsChecked = key == "activities";
+        QTab.IsChecked = key == "q";
         AdvancedTab.IsChecked = key == "advanced";
     }
 

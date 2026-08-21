@@ -370,11 +370,12 @@
         <Grid Grid.Column="1">
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
             <Border BorderBrush="#303741" BorderThickness="0,0,0,1" Background="#11151B">
-                <UniformGrid Rows="1" Columns="5" Margin="24,0">
+                <UniformGrid Rows="1" Columns="6" Margin="24,0">
                     <ToggleButton x:Name="ContentTab" Content="Island Content" Tag="&#xE713;" Style="{StaticResource TopTab}" CommandParameter="content" Click="Section_Click" />
                     <ToggleButton x:Name="AppearanceTab" Content="Appearance" Tag="&#xE790;" Style="{StaticResource TopTab}" CommandParameter="appearance" Click="Section_Click" />
                     <ToggleButton x:Name="PositionTab" Content="Position" Tag="&#xE809;" Style="{StaticResource TopTab}" CommandParameter="position" Click="Section_Click" />
                     <ToggleButton x:Name="ActivitiesTab" Content="Live Activities" Tag="&#xE753;" Style="{StaticResource TopTab}" CommandParameter="activities" Click="Section_Click" />
+                    <ToggleButton x:Name="QTab" Content="Q Assistant" Tag="Q" Style="{StaticResource TopTab}" CommandParameter="q" Click="Section_Click" />
                     <ToggleButton x:Name="AdvancedTab" Content="Advanced" Tag="&#xE9F5;" Style="{StaticResource TopTab}" CommandParameter="advanced" Click="Section_Click" />
                 </UniformGrid>
             </Border>
@@ -501,6 +502,27 @@
                             <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lock on unknown person" Style="{StaticResource RowTitle}" /><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding AutoLockOnUnknown}" /></Grid></Border>
                             <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Pause media when away" Style="{StaticResource RowTitle}" /><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding PresenceAwareMedia}" /></Grid></Border>
                             <Border Style="{StaticResource LastPreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Privacy blur" Style="{StaticResource RowTitle}" /><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding PrivacyAutoBlur}" /></Grid></Border>
+                        </StackPanel></Border>
+                    </StackPanel>
+
+                    <!-- Q Assistant -->
+                    <StackPanel x:Name="QPage" Visibility="Collapsed">
+                        <TextBlock Text="Q Assistant" Style="{StaticResource PageTitle}" />
+                        <TextBlock Text="Ask what is on your screen or get a concise suggestion for what to say next." Style="{StaticResource PageDescription}" />
+                        <TextBlock Text="GENERAL" Style="{StaticResource GroupLabel}" Margin="0,0,0,9" />
+                        <Border Style="{StaticResource InsetGroup}"><StackPanel>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Enable Q" Style="{StaticResource RowTitle}" /><TextBlock Text="Show the Q action in the Island and enable Ctrl+Alt+Q." Style="{StaticResource RowDescription}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding QEnabled}" /></Grid></Border>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Provider" Style="{StaticResource RowTitle}" /><ComboBox Grid.Column="1" Style="{StaticResource FieldCombo}" ItemsSource="{Binding QProviderOptions}" SelectedItem="{Binding QSelectedProvider, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" /></Grid></Border>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Model" Style="{StaticResource RowTitle}" /><TextBox Grid.Column="1" Style="{StaticResource FieldText}" Text="{Binding QSelectedModel, UpdateSourceTrigger=LostFocus}" /></Grid></Border>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="API key" Style="{StaticResource RowTitle}" /><TextBlock Text="Stored with Windows user-scoped encryption, outside settings.json." Style="{StaticResource RowDescription}" /></StackPanel><PasswordBox Grid.Column="1" Width="220" PasswordChanged="QApiKey_Changed" /></Grid></Border>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Capture source" Style="{StaticResource RowTitle}" /><ComboBox Grid.Column="1" Style="{StaticResource FieldCombo}" ItemsSource="{Binding QCaptureModeOptions}" SelectedItem="{Binding QCaptureMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" /></Grid></Border>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Send screen image" Style="{StaticResource RowTitle}" /><TextBlock Text="Vision-capable models receive the captured PNG along with OCR text." Style="{StaticResource RowDescription}" /></StackPanel><CheckBox Grid.Column="1" Style="{StaticResource ToggleSwitch}" IsChecked="{Binding QIncludeScreenImage}" /></Grid></Border>
+                            <Border Style="{StaticResource LastPreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Ollama base URL" Style="{StaticResource RowTitle}" /><TextBox Grid.Column="1" Style="{StaticResource FieldText}" Text="{Binding QOllamaBaseUrl, UpdateSourceTrigger=LostFocus}" /></Grid></Border>
+                        </StackPanel></Border>
+                        <TextBlock Text="REQUEST LIMITS" Style="{StaticResource GroupLabel}" />
+                        <Border Style="{StaticResource InsetGroup}"><StackPanel>
+                            <Border Style="{StaticResource PreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Timeout seconds" Style="{StaticResource RowTitle}" /><Slider Grid.Column="1" Style="{StaticResource FieldSlider}" Minimum="10" Maximum="300" Value="{Binding QTimeoutSeconds}" /></Grid></Border>
+                            <Border Style="{StaticResource LastPreferenceRow}"><Grid><Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Maximum response tokens" Style="{StaticResource RowTitle}" /><Slider Grid.Column="1" Style="{StaticResource FieldSlider}" Minimum="128" Maximum="4096" Value="{Binding QMaxResponseTokens}" /></Grid></Border>
                         </StackPanel></Border>
                     </StackPanel>
 
