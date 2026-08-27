@@ -402,6 +402,12 @@ public sealed class SettingsViewModel : ObservableObject
     public int QMaxResponseTokens { get => _settings.QMaxResponseTokens; set => SetSize(v => _settings.QMaxResponseTokens = v, value, 2048, 32768); }
     public string QAskSystemPrompt { get => _settings.QAskSystemPrompt; set { Set(v => _settings.QAskSystemPrompt = v ?? "", value); _apply(); } }
     public string QSaySystemPrompt { get => _settings.QSaySystemPrompt; set { Set(v => _settings.QSaySystemPrompt = v ?? "", value); _apply(); } }
+    public string QHotkeyShortcut
+    {
+        get => string.IsNullOrWhiteSpace(_settings.QHotkeyShortcut) ? "None" : _settings.QHotkeyShortcut;
+        set { Set(v => _settings.QHotkeyShortcut = string.Equals(v, "None", StringComparison.Ordinal) ? "" : v ?? "", value); _apply(); }
+    }
+    public IReadOnlyList<string> QHotkeyShortcutOptions => ["None", .. QShortcutList.Select(item => item.Name).Where(name => !string.IsNullOrWhiteSpace(name))];
     public string QConnectionStatus { get => _qConnectionStatus; private set => SetProperty(ref _qConnectionStatus, value); }
     public ICommand TestQCommand { get; }
     public ICommand ResetQPromptsCommand { get; }
@@ -430,12 +436,18 @@ public sealed class SettingsViewModel : ObservableObject
             .Where(item => !string.IsNullOrWhiteSpace(item.Name) && !string.IsNullOrWhiteSpace(item.Prompt))
             .Select(item => new QShortcut { Name = item.Name.Trim(), Prompt = item.Prompt.Trim() })
             .ToList();
+        if (!string.IsNullOrWhiteSpace(_settings.QHotkeyShortcut) &&
+            !_settings.QShortcuts.Any(shortcut => string.Equals(shortcut.Name, _settings.QHotkeyShortcut, StringComparison.OrdinalIgnoreCase)))
+            _settings.QHotkeyShortcut = "";
+        RaisePropertyChanged(nameof(QHotkeyShortcut));
+        RaisePropertyChanged(nameof(QHotkeyShortcutOptions));
         _apply();
     }
 
     private void AddQShortcut()
     {
         QShortcutList.Add(new QShortcutItem("New shortcut", "", SyncQShortcuts));
+        RaisePropertyChanged(nameof(QHotkeyShortcutOptions));
         _apply();
     }
 

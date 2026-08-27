@@ -76,7 +76,7 @@ public sealed class SettingsService(LoggingService log)
             settings.QMaxResponseTokens = 8192;
         if (previousSchema < 6)
             settings.ShowIslandInScreenshots = false;
-        settings.SchemaVersion = Math.Max(6, settings.SchemaVersion);
+        settings.SchemaVersion = Math.Max(7, settings.SchemaVersion);
         settings.SelectedMediaApp = string.IsNullOrWhiteSpace(settings.SelectedMediaApp)
             ? "Automatic" : settings.SelectedMediaApp;
         settings.CollapseDelayMilliseconds = Math.Clamp(settings.CollapseDelayMilliseconds, 100, 5000);
@@ -119,6 +119,10 @@ public sealed class SettingsService(LoggingService log)
         settings.QAskSystemPrompt ??= "";
         settings.QSaySystemPrompt ??= "";
         settings.QShortcuts ??= [];
+        settings.QHotkeyShortcut ??= "";
+        if (!string.IsNullOrWhiteSpace(settings.QHotkeyShortcut) &&
+            !settings.QShortcuts.Any(shortcut => string.Equals(shortcut.Name, settings.QHotkeyShortcut, StringComparison.OrdinalIgnoreCase)))
+            settings.QHotkeyShortcut = "";
         if (!Enum.IsDefined(settings.QuotePlacement)) settings.QuotePlacement = QuotePlacement.Off;
         if (!Enum.IsDefined(settings.QuoteRotation)) settings.QuoteRotation = QuoteRotation.Static;
         settings.QuoteSize = Math.Clamp(settings.QuoteSize, 60, 160);

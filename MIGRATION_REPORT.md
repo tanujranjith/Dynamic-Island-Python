@@ -32,6 +32,7 @@ file). Behaviors identified:
 | Timer / alarm | Presets, running/done states, persistent timer/alarm state across restart |
 | Positioning | Top-center placement, drag-and-snap |
 | Settings | Small inline settings menu (no durable general settings store) |
+| Visual assistant | None in the legacy prototype; Q is a native feature added in the WPF rewrite |
 
 Weaknesses identified to fix rather than copy: first/wrong audio source
 selection, no durable general settings, no tray UI, fragile multi-monitor
@@ -52,6 +53,9 @@ no clean window lifecycle.
   position persisted).
 - Light/dark theme behavior.
 - Animated transitions between states.
+- Native **Q visual assistant** with active-window/monitor capture, OCR, optional
+  vision input, Ask/Say modes, streaming responses, follow-ups, dictation, and
+  one-click prompt shortcuts.
 
 ## 4. Features improved
 
@@ -78,6 +82,9 @@ no clean window lifecycle.
   by rendering glass with clipped WPF brushes instead of window-wide acrylic.
 - **Architecture** — MVVM with one-responsibility services and isolated interop,
   replacing the single-file Tkinter design.
+- **Q assistant** — provider-neutral contracts and streaming session state in
+  `DynamicIsland.Q.Core`; the WPF layer owns capture, OCR, dictation, encrypted
+  credentials, settings, and Island presentation.
 
 ## 5. Features deferred / decisions
 
@@ -89,6 +96,9 @@ no clean window lifecycle.
 - **Recurring/weekly alarms** — alarms target the next occurrence (today or
   tomorrow) only.
 - **Arm64** — built/tested for win-x64.
+- **Hosted AI requests** — Q is opt-in and only sends prompts/OCR or an enabled
+  screen image when the user invokes it; provider credentials and terms remain
+  provider-specific.
 
 ## 6. Architecture summary
 
@@ -99,10 +109,13 @@ no clean window lifecycle.
 - **Services** each own one concern and surface state via events:
   `MediaSessionService` (GSMTC, async poll + scoring), `AudioSessionService`
   (CoreAudio on a dedicated MTA thread), `BatteryService`, `ClockService`,
-  `TimerAlarmService` (DispatcherTimer state machine + atomic JSON persistence),
-  `SettingsService` (JSON + corruption recovery), `StartupService` (registry),
-  `TrayService` (WinForms NotifyIcon), `WindowPositionService` (DPI/monitor math),
-  `ThemeService` (system light/dark), `LoggingService` (AppData log).
+   `TimerAlarmService` (DispatcherTimer state machine + atomic JSON persistence),
+   `SettingsService` (JSON + corruption recovery), `StartupService` (registry),
+   `TrayService` (WinForms NotifyIcon), `WindowPositionService` (DPI/monitor math),
+   `ThemeService` (system light/dark), `LoggingService` (AppData log).
+- **Q core** contains provider contracts, prompt composition, normalized streaming
+  events, model discovery, and conversation state. WPF Q services provide screen
+  capture/OCR, Windows dictation, and DPAPI-backed provider secrets.
 - **Interop** is confined to `Interop/NativeMethods.cs` and
   `Interop/CoreAudioInterop.cs` (P/Invoke + WASAPI COM interfaces).
 - **ViewModels** (`IslandViewModel`, `SettingsViewModel`, `TimerAlarmViewModel`)
@@ -121,13 +134,16 @@ Infrastructure/ObservableObject.cs, RelayCommand.cs
 Interop/NativeMethods.cs, CoreAudioInterop.cs
 Models/AppSettings.cs, AudioState.cs, BatteryState.cs, IslandState.cs,
        MediaInfo.cs, TimerAlarmState.cs
-Services/AudioSessionService.cs, BatteryService.cs, ClockService.cs,
-         LoggingService.cs, MediaSessionService.cs, SettingsService.cs,
-         StartupService.cs, ThemeService.cs, TimerAlarmService.cs,
-         TrayService.cs, WindowPositionService.cs
-ViewModels/IslandViewModel.cs, SettingsViewModel.cs, TimerAlarmViewModel.cs
-Views/IslandWindow.xaml(.cs), SettingsWindow.xaml(.cs), TimerAlarmWindow.xaml(.cs)
-README.md, MIGRATION_REPORT.md
+ Services/AudioSessionService.cs, BatteryService.cs, ClockService.cs,
+          LoggingService.cs, MediaSessionService.cs, SettingsService.cs,
+          StartupService.cs, ThemeService.cs, TimerAlarmService.cs,
+          TrayService.cs, WindowPositionService.cs
+ Services/Q/                    Q capture, dictation, and DPAPI secret storage
+ ViewModels/IslandViewModel.cs, SettingsViewModel.cs, TimerAlarmViewModel.cs
+ Views/IslandWindow.xaml(.cs), SettingsWindow.xaml(.cs), TimerAlarmWindow.xaml(.cs)
+ DynamicIsland.Q.Core/QContracts.cs, Providers.cs, QPromptComposer.cs,
+ DynamicIsland.Q.Core/QSessionController.cs
+ README.md, MIGRATION_REPORT.md
 ```
 
 Legacy Python moved to `legacy-python/Animated og version.py` (not deleted, not
@@ -147,8 +163,8 @@ monitor). Screenshots are in [`test-artifacts/`](test-artifacts/).
 | --- | --- | --- | --- |
 | 1 | App launches and stays alive | ✅ | Process persists; no main window in Alt-Tab (tool window) |
 | 2 | Island appears top-center | ✅ | After resetting a leftover manual test position to default top-center |
-| 3 | Compact state renders | ✅ | Mute/audio glyph, charging capsule, clock — `test-artifacts/crop-expanded.png` |
-| 4 | Expanded state on hover | ✅ | Media controls, volume pill, clock/date, charging, timer/settings/menu — `crop-expanded2.png` |
+| 3 | Compact state renders | ✅ | Mute/audio glyph, charging capsule, clock — `test-artifacts/compact-island-final.png` |
+| 4 | Expanded state on hover | ✅ | Expanded visual comparison and timer surface — `test-artifacts/timer-panel-comparison.png` / `timer-panel-final-crop.png` |
 | 5 | No-media state | ✅ | "No media playing / Start playback in any supported app" shown |
 | 6 | Volume / mute display | ✅ | "0% / System muted" reflected from CoreAudio |
 | 7 | Battery + charging state | ✅ | Green charging capsule at 85% in compact and expanded |
@@ -163,6 +179,7 @@ monitor). Screenshots are in [`test-artifacts/`](test-artifacts/).
 | 16 | Single instance | ✅ | Second launch exits immediately, leaves the running instance |
 | 17 | Square/halo removed | ✅ | Two fixes: (a) hard `#52000000` shadow rectangle replaced with a soft rounded `DropShadowEffect` + transparent window margin (pixel-sampled — shadow now fades to desktop at the pill edges instead of a flat full-width band); (b) the corner glow ellipses were squaring off because a `Border` with `CornerRadius` does not clip children to its rounded corners — added a size-tracking rounded `RectangleGeometry` clip on the content so the glows follow the rounded corners |
 | 18 | Charging icon added | ✅ | Dedicated animated green charging capsule — the requested feature |
+| 19 | Q assistant core flows | ✅ (automated) | Prompt composition, Ask/Say guidance, follow-up history, provider errors, empty-stream handling, and OpenRouter parsing are covered by `DynamicIsland.Windows.Tests/QCoreTests.cs` and `QProviderTests.cs` |
 
 ### Not yet manually exercised (recommended before release)
 
@@ -182,3 +199,6 @@ monitor). Screenshots are in [`test-artifacts/`](test-artifacts/).
 - Manual position from automated UI testing can persist between runs; the
   documented default is top-center (reset `DefaultPosition` to top-center or use
   tray → Recenter).
+- A corrected native Q overlay screenshot still needs to be captured after the
+  latest visual fixes; see [`design-qa.md`](design-qa.md). The current Q behavior
+  and privacy model are documented in [`Q.md`](Q.md).

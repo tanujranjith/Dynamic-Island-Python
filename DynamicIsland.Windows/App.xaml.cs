@@ -172,7 +172,7 @@ public partial class App : System.Windows.Application
         _hotkeys.Register("Open settings", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, (uint)'S',
             ShowSettings);
         _hotkeys.Register("Open Q", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, (uint)'Q',
-            () => _ = _islandViewModel.StartQAsync(_qScreen.LastForegroundTarget));
+            () => _ = _islandViewModel.StartQAsync(_qScreen.LastForegroundTarget, _settings.QHotkeyShortcut));
         _clock.Start();
         _battery.Start();
         _audio.Start();

@@ -771,7 +771,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         if (targetWindow != nint.Zero) _qTargetWindow = targetWindow;
     }
 
-    public async Task StartQAsync(nint targetWindow = default)
+    public async Task StartQAsync(nint targetWindow = default, string? hotkeyShortcutName = null)
     {
         if (!Settings.QEnabled) return;
         if (targetWindow != nint.Zero) _qTargetWindow = targetWindow;
@@ -798,6 +798,14 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         {
             var context = await _qScreen.CaptureAsync(_qTargetWindow, Settings.QCaptureMode == Models.QCaptureMode.ActiveMonitor ? DynamicIsland.Q.Core.QCaptureMode.ActiveMonitor : DynamicIsland.Q.Core.QCaptureMode.ActiveWindow, CancellationToken.None).ConfigureAwait(false);
             await _qSession.BeginAsync(DynamicIsland.Q.Core.QMode.Ask, Settings.QSelectedProvider, Settings.QSelectedModel, context).ConfigureAwait(false);
+
+            var shortcutName = string.IsNullOrWhiteSpace(hotkeyShortcutName) ? null : hotkeyShortcutName.Trim();
+            var shortcutPrompt = shortcutName is null
+                ? null
+                : Settings.QShortcuts?.FirstOrDefault(shortcut =>
+                    string.Equals(shortcut.Name, shortcutName, StringComparison.OrdinalIgnoreCase))?.Prompt;
+            if (!string.IsNullOrWhiteSpace(shortcutPrompt))
+                await SubmitQAsync(shortcutPrompt).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
