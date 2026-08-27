@@ -9,8 +9,13 @@ Built in **C# + WPF on .NET 10**, rewritten from an original Python/Tkinter
 prototype. The complete evolution of Python prototypes that led here is preserved
 in [`python-versions/`](python-versions/).
 
+The native build also includes **Q**, an on-demand visual assistant that reads the
+active window, uses OCR and optional vision input, and streams answers directly
+inside the Island. See [`Q.md`](Q.md) for setup, provider configuration, and the
+privacy model.
+
 <p align="center">
-  <img src="media/demo.gif" alt="Dynamic Island opening and expanding" width="640">
+  <img src="media/current-expanded-island.png" alt="Current Dynamic Island expanded media, audio, and system status surface" width="900">
 </p>
 
 <p align="center">
@@ -37,13 +42,17 @@ in [`python-versions/`](python-versions/).
 
 ---
 
-## The expanded island
+## The current implementation
 
 <p align="center">
-  <img src="media/expanded.png" alt="Expanded Dynamic Island — Now Playing, Audio, Status" width="900">
+  <img src="media/current-timer-panel.png" alt="Current native WPF timer panel" width="900">
 </p>
 
-Three precise sections on one wide overlay:
+The current native WPF build keeps the Apple-style shell while adding a dedicated
+timer/alarm surface, settings customization, live activities, and Q. The timer
+panel above is a clean implementation capture rather than a design mockup.
+
+The expanded Island is organized into three precise sections on one wide overlay:
 
 | Left — Now Playing | Center — Audio | Right — Status |
 | --- | --- | --- |
@@ -56,15 +65,18 @@ can't seek.
 
 ---
 
-## Animations & screenshots
+## Screenshots
 
-| Open / hold / close | Mid-collapse | Compact pill |
-| --- | --- | --- |
-| <img src="media/open-close.gif" alt="open and close loop" width="300"> | <img src="media/collapsing.png" alt="collapsing" width="300"> | <img src="media/compact.png" alt="compact" width="300"> |
+| Expanded Island | Compact Island | Settings surface | Timer surface |
+| --- | --- | --- | --- |
+| <img src="media/current-expanded-island.png" alt="Expanded Dynamic Island" width="220"> | <img src="media/current-island-preview.png" alt="Compact Dynamic Island" width="220"> | <img src="media/current-settings-preview.png" alt="Dynamic Island settings window" width="220"> | <img src="media/current-timer-panel.png" alt="Timer panel" width="220"> |
 
-> The animated GIFs capture the live hover/expand motion; `media/expanded.png` is a
-> pixel render of the current redesigned layout. An earlier design is kept at
-> `media/expanded-classic.png` for reference.
+These captures document the current native WPF implementation. The clean crops
+are used here intentionally; raw desktop captures in `test-artifacts/` may include
+the contents of the active test window and should not be treated as public promo
+assets. The timer comparison capture is retained in `media/current-timer-comparison.png`
+for QA reference. The older animation and design renders remain in `media/` as historical
+references under `media/legacy/` and are no longer used as the README hero.
 
 ---
 
@@ -90,14 +102,21 @@ can't seek.
   cleanly on desktops with no battery.
 - **Timer & alarm** — presets and custom durations, a *done* state with sound,
   snooze/dismiss, and state that survives a restart.
+- **Q visual assistant** — invoke with `Ctrl+Alt+Q`, capture the active window or
+  monitor, extract OCR text, optionally send the captured PNG to a vision-capable
+  provider, and stream an answer in the Island. Q supports Ask and Say modes,
+  typed follow-ups, Windows dictation, retry/copy/recapture/new-question actions,
+  provider model discovery, and configurable one-click shortcuts.
 - **Quick actions** — camera presence, timer, settings, collapse, and a menu, as
   one row of equal circular buttons.
 - **System integration** — per-monitor-V2 DPI aware, multi-monitor aware,
   single-instance, hidden from Alt-Tab, optional launch-on-startup, optional
   click-through when compact, reduced-motion support, full light/dark theming, and
   a tray menu.
-- **Privacy-first** — no analytics, accounts, cloud, or network calls beyond
-  optional weather and one-time camera-model downloads. Everything runs locally.
+- **Privacy-first** — no analytics or accounts. The app makes network requests
+  only for optional weather, one-time camera-model downloads, and Q provider
+  requests when Q is explicitly invoked. Q credentials use Windows user-scoped
+  DPAPI storage and captured context stays in memory for the current session.
 
 ---
 
@@ -120,6 +139,12 @@ throughout; type is **Segoe UI Variable**.
    **`DynamicIsland.exe`** (or use the green button above).
 2. Double-click it. The build is **self-contained** — no .NET, no installer,
    nothing else to set up.
+
+To enable Q, open **Settings → Q Assistant**, choose a provider and model, add the
+provider key if needed, choose whether to capture the active window or monitor,
+and use **Test connection**. The first Q session also presents a disclosure before
+screen context is sent to a provider. Local Ollama setups can use the configurable
+base URL without an API key.
 
 The island appears at the top-center of your primary monitor and lives in the
 system tray (right-click for Settings, Recenter, Quit). Windows SmartScreen may
@@ -184,14 +209,19 @@ DynamicIsland/
 │   └── Infrastructure/            ObservableObject, RelayCommand, SeekMath, …
 ├── DynamicIsland.Windows.Tests/   xUnit tests (e.g. 10s-seek clamping)
 ├── DynamicIsland.slnx             Solution
+├── DynamicIsland.Q.Core/           Provider contracts, prompt composition, and streaming session state
+├── Q.md                            Q assistant setup, controls, providers, and privacy notes
 ├── MIGRATION_REPORT.md            Python → C# audit, feature mapping, test results
-├── media/                         Animations & screenshots used by this README
+├── design-qa.md                   Visual QA notes and known capture limitations
+├── media/                         Current screenshots used by this README (`legacy/` holds old renders)
+├── test-artifacts/                Local implementation/QA captures; review for private content before sharing
 └── python-versions/               Archived Python/Tkinter prototypes (not built)
 ```
 
 All Windows interop is isolated under `Interop/`; P/Invoke is not scattered through
 the UI. See [`MIGRATION_REPORT.md`](MIGRATION_REPORT.md) for the full feature audit
-and what was preserved vs. improved.
+and what was preserved vs. improved. See [`Q.md`](Q.md) for the native assistant
+workflow and [`design-qa.md`](design-qa.md) for visual validation notes.
 
 ---
 

@@ -12,7 +12,7 @@ public enum QCaptureMode { ActiveWindow, ActiveMonitor }
 
 public sealed class AppSettings
 {
-    public int SchemaVersion { get; set; } = 6;
+    public int SchemaVersion { get; set; } = 7;
     public bool LaunchOnStartup { get; set; }
     public bool AlwaysOnTop { get; set; } = true;
     public bool LockPosition { get; set; }
@@ -164,6 +164,8 @@ public sealed class AppSettings
     public string QAskSystemPrompt { get; set; } = "";
     public string QSaySystemPrompt { get; set; } = "";
     public List<QShortcut> QShortcuts { get; set; } = [];
+    // Empty means Ctrl+Alt+Q opens Q without automatically submitting a quick shortcut.
+    public string QHotkeyShortcut { get; set; } = "";
     public bool QDisclosureAccepted { get; set; }
 
     // ===== Battery warnings =====
