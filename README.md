@@ -188,7 +188,7 @@ named exactly `DynamicIsland.exe`:
 ```powershell
 dotnet publish .\DynamicIsland.Windows -c Release -r win-x64
 # rename/copy the output to DynamicIsland.exe, then:
-gh release create v1.0.0 ".\DynamicIsland.Windows\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish\DynamicIsland.Windows.exe#DynamicIsland.exe" --title "v1.0.0" --notes "First release"
+gh release create v1.0.3 ".\DynamicIsland.Windows\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish\DynamicIsland.Windows.exe#DynamicIsland.exe" --title "v1.0.3" --notes "OpenAI reasoning controls and Q reliability updates"
 ```
 
 The `#DynamicIsland.exe` suffix uploads the asset under that name, which is what the
