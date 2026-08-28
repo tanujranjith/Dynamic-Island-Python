@@ -145,7 +145,8 @@ public abstract class HttpQProvider(HttpClient? httpClient = null) : IQProvider
 
     protected async IAsyncEnumerable<QStreamEvent> StreamOpenAiCompatibleAsync(QRequest request, string? credential,
         string? baseUrl, string fallback, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
-        IReadOnlyDictionary<string, object?>? additionalBody = null)
+        IReadOnlyDictionary<string, object?>? additionalBody = null,
+        bool useMaxCompletionTokens = false)
     {
         var endpoint = Endpoint(baseUrl, fallback, "/chat/completions");
         var body = new Dictionary<string, object?>
@@ -153,9 +154,12 @@ public abstract class HttpQProvider(HttpClient? httpClient = null) : IQProvider
             ["model"] = request.Model,
             ["messages"] = OpenAiMessages(request),
             ["stream"] = true,
-            ["temperature"] = 0.2,
-            ["max_tokens"] = request.MaxResponseTokens
+            [useMaxCompletionTokens ? "max_completion_tokens" : "max_tokens"] = request.MaxResponseTokens
         };
+        // OpenAI reasoning models reject temperature; use the provider default on this path.
+        if (!useMaxCompletionTokens) body["temperature"] = 0.2;
+        if (useMaxCompletionTokens && request.ReasoningEffort.Trim().ToLowerInvariant() is not ("" or "auto"))
+            body["reasoning_effort"] = request.ReasoningEffort.Trim().ToLowerInvariant();
         if (additionalBody is not null)
             foreach (var item in additionalBody) body[item.Key] = item.Value;
         using var message = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = Json(body) };
@@ -189,7 +193,8 @@ public sealed class OpenAiQProvider(HttpClient? httpClient = null) : HttpQProvid
 {
     public override QProviderInfo Info { get; } = new("openai", "OpenAI", QProviderCapabilities.Text | QProviderCapabilities.Images | QProviderCapabilities.Streaming | QProviderCapabilities.ModelDiscovery, "gpt-4o-mini", "https://api.openai.com/v1");
     public override IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl, CancellationToken cancellationToken) =>
-        StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken);
+        StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken,
+            useMaxCompletionTokens: true);
 }
 
 public sealed class GroqQProvider(HttpClient? httpClient = null) : HttpQProvider(httpClient)
@@ -248,7 +253,7 @@ public sealed class OpenRouterQProvider(HttpClient? httpClient = null) : HttpQPr
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var profile = await GetReasoningProfileAsync(request.Model, credential, cancellationToken).ConfigureAwait(false);
-        var extra = BuildReasoningBody(profile, request.MaxResponseTokens);
+        var extra = BuildReasoningBody(profile, request.MaxResponseTokens, request.ReasoningEffort);
         await foreach (var item in StreamOpenAiCompatibleAsync(request, credential, baseUrl, Info.DefaultBaseUrl!, cancellationToken, extra).ConfigureAwait(false))
             yield return item;
     }
@@ -283,19 +288,24 @@ public sealed class OpenRouterQProvider(HttpClient? httpClient = null) : HttpQPr
         return true;
     }
 
-    private static IReadOnlyDictionary<string, object?>? BuildReasoningBody(ReasoningProfile? profile, int maxResponseTokens)
+    private static IReadOnlyDictionary<string, object?>? BuildReasoningBody(ReasoningProfile? profile, int maxResponseTokens, string? requestedEffort)
     {
         if (profile is null || (!profile.Mandatory && !profile.DefaultEnabled)) return null;
         var reasoning = new Dictionary<string, object?> { ["exclude"] = true };
-        if (profile.SupportsMaxTokens)
+        var effort = requestedEffort?.Trim().ToLowerInvariant();
+        if (effort is "" or "auto") effort = null;
+        if (profile.SupportsMaxTokens && effort is null)
         {
             reasoning["max_tokens"] = Math.Clamp(maxResponseTokens / 4, 1024, Math.Max(1024, maxResponseTokens - 1024));
         }
         else
         {
             var preference = new[] { "minimal", "low", "medium", "high", "xhigh", "max" };
-            var effort = preference.FirstOrDefault(candidate => profile.SupportedEfforts.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+            effort ??= preference.FirstOrDefault(candidate => profile.SupportedEfforts.Contains(candidate, StringComparer.OrdinalIgnoreCase))
                 ?? profile.DefaultEffort ?? "low";
+            if (profile.SupportedEfforts.Length > 0 && !profile.SupportedEfforts.Contains(effort, StringComparer.OrdinalIgnoreCase))
+                effort = preference.FirstOrDefault(candidate => profile.SupportedEfforts.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                    ?? profile.DefaultEffort ?? "low";
             reasoning["effort"] = effort;
         }
         return new Dictionary<string, object?> { ["reasoning"] = reasoning };

@@ -76,7 +76,7 @@ public sealed class SettingsService(LoggingService log)
             settings.QMaxResponseTokens = 8192;
         if (previousSchema < 6)
             settings.ShowIslandInScreenshots = false;
-        settings.SchemaVersion = Math.Max(7, settings.SchemaVersion);
+        settings.SchemaVersion = Math.Max(9, settings.SchemaVersion);
         settings.SelectedMediaApp = string.IsNullOrWhiteSpace(settings.SelectedMediaApp)
             ? "Automatic" : settings.SelectedMediaApp;
         settings.CollapseDelayMilliseconds = Math.Clamp(settings.CollapseDelayMilliseconds, 100, 5000);
@@ -110,12 +110,17 @@ public sealed class SettingsService(LoggingService log)
         if (string.IsNullOrWhiteSpace(settings.ExpandedOrder)) settings.ExpandedOrder = "media,volume,status";
         settings.LowBatteryThreshold = Math.Clamp(settings.LowBatteryThreshold, 5, 50);
         settings.VolumeWarningThreshold = Math.Clamp(settings.VolumeWarningThreshold, 10, 100);
-        if (!Enum.IsDefined(settings.QCaptureMode)) settings.QCaptureMode = QCaptureMode.ActiveWindow;
+        if (!Enum.IsDefined(settings.QCaptureMode)) settings.QCaptureMode = Models.QCaptureMode.ActiveWindow;
         settings.QSelectedProvider = string.IsNullOrWhiteSpace(settings.QSelectedProvider) ? "openai" : settings.QSelectedProvider.Trim();
         settings.QSelectedModel = string.IsNullOrWhiteSpace(settings.QSelectedModel) ? "gpt-4o-mini" : settings.QSelectedModel.Trim();
         settings.QOllamaBaseUrl = string.IsNullOrWhiteSpace(settings.QOllamaBaseUrl) ? "http://localhost:11434/v1" : settings.QOllamaBaseUrl.TrimEnd('/');
         settings.QTimeoutSeconds = Math.Clamp(settings.QTimeoutSeconds, 10, 300);
         settings.QMaxResponseTokens = Math.Clamp(settings.QMaxResponseTokens, 2048, 32768);
+        settings.QReasoningEffort = settings.QReasoningEffort?.Trim().ToLowerInvariant() switch
+        {
+            "minimal" or "low" or "medium" or "high" => settings.QReasoningEffort.Trim().ToLowerInvariant(),
+            _ => "auto"
+        };
         settings.QAskSystemPrompt ??= "";
         settings.QSaySystemPrompt ??= "";
         settings.QShortcuts ??= [];

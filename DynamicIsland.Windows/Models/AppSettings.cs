@@ -12,7 +12,7 @@ public enum QCaptureMode { ActiveWindow, ActiveMonitor }
 
 public sealed class AppSettings
 {
-    public int SchemaVersion { get; set; } = 7;
+    public int SchemaVersion { get; set; } = 9;
     public bool LaunchOnStartup { get; set; }
     public bool AlwaysOnTop { get; set; } = true;
     public bool LockPosition { get; set; }
@@ -161,6 +161,7 @@ public sealed class AppSettings
     public string QOllamaBaseUrl { get; set; } = "http://localhost:11434/v1";
     public int QTimeoutSeconds { get; set; } = 90;
     public int QMaxResponseTokens { get; set; } = 8192;
+    public string QReasoningEffort { get; set; } = "auto";
     public string QAskSystemPrompt { get; set; } = "";
     public string QSaySystemPrompt { get; set; } = "";
     public List<QShortcut> QShortcuts { get; set; } = [];

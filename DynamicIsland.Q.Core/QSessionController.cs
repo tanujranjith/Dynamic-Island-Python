@@ -29,7 +29,8 @@ public sealed class QSessionController(IQProviderRegistry providers) : IQSession
 
     public async Task SubmitAsync(string prompt, QMode mode, string providerId, string model, string? credential, string? baseUrl,
         bool includeImage, Func<CancellationToken, Task<QScreenContext?>>? recapture = null,
-        CancellationToken cancellationToken = default, int maxResponseTokens = 8192, string? customSystemPrompt = null)
+        CancellationToken cancellationToken = default, int maxResponseTokens = 8192, string? customSystemPrompt = null,
+        string reasoningEffort = "auto")
     {
         if (string.IsNullOrWhiteSpace(prompt)) return;
         Cancel();
@@ -51,7 +52,7 @@ public sealed class QSessionController(IQProviderRegistry providers) : IQSession
             Publish(Snapshot with { State = QRunState.Thinking, Prompt = prompt, Mode = mode, Context = context, Response = string.Empty, Error = null, ProviderId = providerId, Model = model, Status = "Thinking…" });
             var request = new QRequest(mode, prompt, context, _history.ToArray(), model,
                 includeImage && context?.HasImage == true && provider.Info.Capabilities.HasFlag(QProviderCapabilities.Images),
-                Math.Clamp(maxResponseTokens, 2048, 32768), customSystemPrompt);
+                Math.Clamp(maxResponseTokens, 2048, 32768), customSystemPrompt, reasoningEffort);
             var response = new System.Text.StringBuilder();
             await foreach (var item in provider.StreamAsync(request, credential, baseUrl, token).ConfigureAwait(false))
             {

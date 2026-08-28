@@ -1,5 +1,4 @@
 using DynamicIsland.Windows.Models;
-
 namespace DynamicIsland.Windows.Services.Vision;
 
 public enum EnrollPhase { Searching, Capturing, Completed, Failed }

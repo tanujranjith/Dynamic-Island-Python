@@ -400,6 +400,8 @@ public sealed class SettingsViewModel : ObservableObject
     public string QOllamaBaseUrl { get => _settings.QOllamaBaseUrl; set { Set(v => _settings.QOllamaBaseUrl = v ?? "http://localhost:11434/v1", value); _apply(); } }
     public int QTimeoutSeconds { get => _settings.QTimeoutSeconds; set => SetSize(v => _settings.QTimeoutSeconds = v, value, 10, 300); }
     public int QMaxResponseTokens { get => _settings.QMaxResponseTokens; set => SetSize(v => _settings.QMaxResponseTokens = v, value, 2048, 32768); }
+    public string QReasoningEffort { get => _settings.QReasoningEffort; set { Set(v => _settings.QReasoningEffort = v ?? "auto", value); _apply(); } }
+    public IReadOnlyList<string> QReasoningEffortOptions => ["auto", "minimal", "low", "medium", "high"];
     public string QAskSystemPrompt { get => _settings.QAskSystemPrompt; set { Set(v => _settings.QAskSystemPrompt = v ?? "", value); _apply(); } }
     public string QSaySystemPrompt { get => _settings.QSaySystemPrompt; set { Set(v => _settings.QSaySystemPrompt = v ?? "", value); _apply(); } }
     public string QHotkeyShortcut
