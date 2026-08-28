@@ -12,7 +12,9 @@ without opening a separate chat window.
 3. Choose **Active window** or **Active monitor** as the capture source.
 4. Decide whether to send the captured PNG to vision-capable models. OCR text is
    extracted from the capture for context.
-5. Use **Test connection**, then invoke Q with `Ctrl+Alt+Q`.
+5. Choose **Reasoning effort**. **Auto** uses the provider/model default; explicit
+   values are sent when supported by the selected model.
+6. Use **Test connection**, then invoke Q with `Ctrl+Alt+Q`.
 
 Provider credentials are stored outside `settings.json` in a Windows user-scoped
 DPAPI-protected file. They are not included in exported presets or repository
@@ -37,7 +39,9 @@ API key.
 The built-in provider registry supports OpenAI, Anthropic, Google Gemini, Groq,
 xAI/Grok, OpenRouter, DeepSeek, and Ollama. Providers stream responses through a
 common session controller; OpenRouter can discover available models and reports
-whether each model supports image input.
+whether each model supports image input. OpenAI requests use the current
+`max_completion_tokens` parameter and can send `reasoning_effort`; other
+providers retain their own compatible request format.
 
 ## Privacy and data flow
 

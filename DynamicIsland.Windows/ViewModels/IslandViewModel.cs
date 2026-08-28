@@ -827,7 +827,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             Settings.QIncludeScreenImage,
             token => _qScreen.CaptureAsync(_qTargetWindow, Settings.QCaptureMode == Models.QCaptureMode.ActiveMonitor ? DynamicIsland.Q.Core.QCaptureMode.ActiveMonitor : DynamicIsland.Q.Core.QCaptureMode.ActiveWindow, token),
             maxResponseTokens: Settings.QMaxResponseTokens,
-            customSystemPrompt: customSystemPrompt).ConfigureAwait(false);
+            customSystemPrompt: customSystemPrompt,
+            reasoningEffort: Settings.QReasoningEffort).ConfigureAwait(false);
     }
 
     public async Task<string?> DictateQAsync()
