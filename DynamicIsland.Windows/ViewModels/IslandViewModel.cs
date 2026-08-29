@@ -34,10 +34,14 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private readonly NotificationListenerService _notificationService;
     private readonly NotificationHistoryService _notificationHistoryService;
     private readonly PrivacySensorService _privacyService;
+    private readonly AirPodsService? _airPodsService;
+    private AirPodsState _airPods = AirPodsState.Unavailable;
     private PrivacySensorState _privacy = PrivacySensorState.None;
     private readonly System.Windows.Threading.DispatcherTimer _notificationTimer = new() { Interval = TimeSpan.FromSeconds(6) };
     private readonly System.Windows.Threading.DispatcherTimer _volumeWarningTimer = new() { Interval = TimeSpan.FromSeconds(6) };
+    private readonly System.Windows.Threading.DispatcherTimer _airPodsBannerTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private bool _volumeWarningActive;
+    private bool _airPodsBannerActive;
     private int _bannerSeq;
     private bool _prevAboveVolumeThreshold = true; // initialised true so first audio event never triggers
     private DateTimeOffset _volumeWarnCooldownUntil = DateTimeOffset.MinValue;
@@ -90,7 +94,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         NotificationListenerService notificationService, PrivacySensorService privacyService,
         NotificationHistoryService notificationHistoryService,
         IQSessionController qSession, IQScreenContextService qScreen, IQSpeechInputService qSpeech,
-        Services.Q.IQSecretStore qSecrets)
+        Services.Q.IQSecretStore qSecrets, AirPodsService? airPodsService = null)
     {
         Settings = settings;
         _mediaService = mediaService;
@@ -112,6 +116,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _qScreen = qScreen;
         _qSpeech = qSpeech;
         _qSecrets = qSecrets;
+        _airPodsService = airPodsService;
+        if (_airPodsService != null)
+        {
+            _airPods = _airPodsService.Current;
+            _airPodsService.Changed += OnAirPodsChanged;
+        }
 
         PreviousCommand = new RelayCommand(() => _ = _mediaService.PreviousAsync(), () => Media.CanPrevious);
         PlayPauseCommand = new RelayCommand(() => _ = _mediaService.TogglePlayPauseAsync(), () => Media.CanPlayPause);
@@ -138,8 +148,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _calendarService.Changed += OnMeetingChanged;
         _notificationService.Notified += OnNotified;
         _privacyService.Changed += OnPrivacyChanged;
-        _notificationTimer.Tick += (_, _) => { _notificationTimer.Stop(); _notification = null; RaiseMany(nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody)); };
-        _volumeWarningTimer.Tick += (_, _) => { _volumeWarningTimer.Stop(); _volumeWarningActive = false; RaiseMany(nameof(ShowBanner)); };
+        _notificationTimer.Tick += (_, _) => { _notificationTimer.Stop(); _notification = null; RaiseMany(nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody)); };
+        _volumeWarningTimer.Tick += (_, _) => { _volumeWarningTimer.Stop(); _volumeWarningActive = false; RaiseMany(nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody)); };
+        _airPodsBannerTimer.Tick += (_, _) => { _airPodsBannerTimer.Stop(); _airPodsBannerActive = false; RaiseMany(nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody)); };
         _quoteTimer.Tick += (_, _) => OnUi(AdvanceQuote);
         LaunchCommand = new RelayCommand<string>(LaunchApp);
         OpenMeetingCommand = new RelayCommand(() => { if (!string.IsNullOrWhiteSpace(_meeting?.JoinUrl)) OpenUrl(_meeting!.JoinUrl); });
@@ -363,6 +374,66 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool ShowMicInUse => Settings.ShowPrivacyIndicators && _privacy.Microphone;
     public bool ShowPrivacyInUse => ShowCameraInUse || ShowMicInUse;
 
+    // ===== AirPods =====
+    public AirPodsState AirPods => _airPods;
+    public bool ShowAirPods => _airPods.IsConnected && _airPods.IsAvailable && !FocusModeEnabled;
+    public bool ShowAirPodsCard => ShowAirPods;
+    public string AirPodsName => _airPods.DisplayName;
+    public string AirPodsModelName => _airPods.ModelName;
+    public string AirPodsLeftBatteryText => FormatAirPodsBattery(_airPods.LeftBatteryPercent);
+    public string AirPodsRightBatteryText => FormatAirPodsBattery(_airPods.RightBatteryPercent);
+    public string AirPodsCaseBatteryText => FormatAirPodsBattery(_airPods.CaseBatteryPercent);
+    public string AirPodsBatterySummary
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (_airPods.LeftBatteryAvailable) parts.Add($"L {FormatAirPodsBattery(_airPods.LeftBatteryPercent)}{(_airPods.LeftCharging ? " ⚡" : "")}");
+            if (_airPods.RightBatteryAvailable) parts.Add($"R {FormatAirPodsBattery(_airPods.RightBatteryPercent)}{(_airPods.RightCharging ? " ⚡" : "")}");
+            if (_airPods.CaseBatteryAvailable) parts.Add($"Case {FormatAirPodsBattery(_airPods.CaseBatteryPercent)}{(_airPods.CaseCharging ? " ⚡" : "")}");
+            return parts.Count > 0 ? string.Join("  •  ", parts) : "Connected";
+        }
+    }
+    public string AirPodsCompactBatteryText
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (_airPods.LeftBatteryAvailable) parts.Add($"L {FormatAirPodsBattery(_airPods.LeftBatteryPercent)}");
+            if (_airPods.RightBatteryAvailable) parts.Add($"R {FormatAirPodsBattery(_airPods.RightBatteryPercent)}");
+            if (_airPods.CaseBatteryAvailable) parts.Add($"C {FormatAirPodsBattery(_airPods.CaseBatteryPercent)}");
+            return parts.Count > 0 ? string.Join("  ", parts) : "Connected";
+        }
+    }
+    public bool ShowAirPodsLeft => _airPods.LeftBatteryAvailable;
+    public bool ShowAirPodsRight => _airPods.RightBatteryAvailable;
+    public bool ShowAirPodsCase => _airPods.CaseBatteryAvailable;
+    public bool AirPodsLeftCharging => _airPods.LeftCharging;
+    public bool AirPodsRightCharging => _airPods.RightCharging;
+    public bool AirPodsCaseCharging => _airPods.CaseCharging;
+
+    private static string FormatAirPodsBattery(int? percent)
+    {
+        if (!percent.HasValue) return "—";
+        var value = Math.Clamp(percent.Value, 0, 100);
+        if (value < 100 && value % 10 == 0)
+            return $"{value}-{value + 9}%";
+        return $"{value}%";
+    }
+    public string AirPodsStatusText
+    {
+        get
+        {
+            if (!_airPods.IsConnected) return string.Empty;
+            if (_airPods.BothInCase && _airPods.CaseLidOpen) return "Case open";
+            if (_airPods.BothInEar) return "In ear";
+            if (_airPods.LeftInEar) return "Left in ear";
+            if (_airPods.RightInEar) return "Right in ear";
+            if (_airPods.BothInCase) return "In case";
+            return "Connected";
+        }
+    }
+
     // ===== Per-element font sizes (each = default × element% × interface%) =====
     private double Scaled(int elementPercent, double baseSize) =>
         baseSize * Math.Clamp(elementPercent, 60, 160) / 100.0 * Math.Clamp(Settings.InterfaceScale, 70, 150) / 100.0;
@@ -540,15 +611,73 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool HasNotificationHistory => NotificationHistory.Count > 0;
     public bool ShowEmptyNotificationHistory => !HasNotificationHistory;
 
-    // ===== Unified banner (Windows notification OR volume warning) =====
-    public bool ShowBanner => ShowNotification || (_volumeWarningActive && Settings.VolumeWarningEnabled && !FocusModeEnabled);
-    public string BannerApp => _volumeWarningActive && !ShowNotification ? "Volume" : NotificationApp;
-    public string BannerTitle => _volumeWarningActive && !ShowNotification ? "High volume" : NotificationTitle;
-    public string BannerBody => _volumeWarningActive && !ShowNotification
-        ? $"Volume is at {_lastWarnedVolumePercent}% — consider lowering it to protect your hearing."
-        : NotificationBody;
+    // ===== Unified banner (Windows notification OR volume warning OR AirPods) =====
+    public bool IsAirPodsBannerActive => _airPodsBannerActive && !FocusModeEnabled && !ShowNotification && !(_volumeWarningActive && Settings.VolumeWarningEnabled);
+    public bool ShowBanner => ShowNotification || (_volumeWarningActive && Settings.VolumeWarningEnabled && !FocusModeEnabled) || IsAirPodsBannerActive;
+    public string BannerApp
+    {
+        get
+        {
+            if (ShowNotification) return NotificationApp;
+            if (_volumeWarningActive && Settings.VolumeWarningEnabled) return "Volume";
+            if (IsAirPodsBannerActive) return _airPods.DisplayName;
+            return string.Empty;
+        }
+    }
+    public string BannerTitle
+    {
+        get
+        {
+            if (ShowNotification) return NotificationTitle;
+            if (_volumeWarningActive && Settings.VolumeWarningEnabled) return "High volume";
+            if (IsAirPodsBannerActive) return BuildAirPodsBannerTitle();
+            return string.Empty;
+        }
+    }
+    public string BannerBody
+    {
+        get
+        {
+            if (ShowNotification) return NotificationBody;
+            if (_volumeWarningActive && Settings.VolumeWarningEnabled) return $"Volume is at {_lastWarnedVolumePercent}% — consider lowering it to protect your hearing.";
+            if (IsAirPodsBannerActive) return BuildAirPodsBannerBody();
+            return string.Empty;
+        }
+    }
     // Increments once per new banner event so the view plays the entrance animation exactly once.
     public int BannerSeq => _bannerSeq;
+
+    private string BuildAirPodsBannerTitle()
+    {
+        var parts = new List<string>();
+        if (_airPods.LeftBatteryAvailable) parts.Add($"L {FormatAirPodsBattery(_airPods.LeftBatteryPercent)}{(_airPods.LeftCharging ? " ⚡" : "")}");
+        if (_airPods.RightBatteryAvailable) parts.Add($"R {FormatAirPodsBattery(_airPods.RightBatteryPercent)}{(_airPods.RightCharging ? " ⚡" : "")}");
+        if (_airPods.CaseBatteryAvailable) parts.Add($"Case {FormatAirPodsBattery(_airPods.CaseBatteryPercent)}{(_airPods.CaseCharging ? " ⚡" : "")}");
+        if (parts.Count == 0) return _airPods.ModelName;
+        return string.Join("   ", parts);
+    }
+
+    private string BuildAirPodsBannerBody()
+    {
+        var details = new List<string>();
+        if (_airPods.BothInCase && _airPods.CaseLidOpen) details.Add("Case open");
+        else if (_airPods.BothInCase) details.Add("In case");
+        if (_airPods.LeftInEar || _airPods.RightInEar)
+        {
+            if (_airPods.BothInEar) details.Add("In ear");
+            else if (_airPods.LeftInEar) details.Add("Left in ear");
+            else if (_airPods.RightInEar) details.Add("Right in ear");
+        }
+        if (_airPods.LeftCharging || _airPods.RightCharging || _airPods.CaseCharging)
+        {
+            var ch = new List<string>();
+            if (_airPods.LeftCharging) ch.Add("L charging");
+            if (_airPods.RightCharging) ch.Add("R charging");
+            if (_airPods.CaseCharging) ch.Add("Case charging");
+            if (ch.Count > 0) details.Add(string.Join(", ", ch));
+        }
+        return details.Count > 0 ? string.Join("  •  ", details) : "Connected";
+    }
 
     // ===== Audio spectrum (real, from loopback) =====
     public bool UseRealSpectrum => Settings.RealAudioSpectrum && _spectrumService.IsActive && IsAudioActive;
@@ -999,7 +1128,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _notificationSeq++;
         _bannerSeq++;
         RaiseMany(nameof(ShowNotification), nameof(NotificationApp), nameof(NotificationTitle), nameof(NotificationBody), nameof(NotificationSeq),
-            nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq));
+            nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq));
         _notificationTimer.Stop();
         if (!FocusModeEnabled) _notificationTimer.Start();
     });
@@ -1021,7 +1150,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _notification = null;
         _notificationTimer.Stop();
         RefreshNotificationHistory();
-        RaiseMany(nameof(ShowNotification), nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody));
+        RaiseMany(nameof(ShowNotification), nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody));
     }
 
     private static void OpenNotification(NotificationHistoryItem? item)
@@ -1073,7 +1202,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _volumeWarningActive = true;
         _volumeWarnCooldownUntil = DateTimeOffset.Now.AddSeconds(60);
         _bannerSeq++;
-        RaiseMany(nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq));
+        RaiseMany(nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq));
         _volumeWarningTimer.Stop();
         _volumeWarningTimer.Start();
     }
@@ -1215,7 +1344,68 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseMany(nameof(FocusModeEnabled), nameof(FocusModeText),
             nameof(ShowWeather), nameof(ShowSystemMonitor), nameof(ShowCountdown), nameof(ShowStocks), nameof(ShowWorldClocks),
             nameof(ShowNextMeeting), nameof(ShowQuickLaunch), nameof(ShowBatteryTime), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
-            nameof(ShowNotification), nameof(ShowBanner));
+            nameof(ShowNotification), nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(ShowAirPods), nameof(ShowAirPodsCard));
+    }
+
+    private void RaiseAirPodsProperties()
+    {
+        RaiseMany(nameof(AirPods), nameof(ShowAirPods), nameof(ShowAirPodsCard), nameof(AirPodsName), nameof(AirPodsModelName),
+            nameof(AirPodsLeftBatteryText), nameof(AirPodsRightBatteryText), nameof(AirPodsCaseBatteryText), nameof(AirPodsBatterySummary),
+            nameof(AirPodsCompactBatteryText),
+            nameof(ShowAirPodsLeft), nameof(ShowAirPodsRight), nameof(ShowAirPodsCase),
+            nameof(AirPodsLeftCharging), nameof(AirPodsRightCharging), nameof(AirPodsCaseCharging),
+            nameof(AirPodsStatusText), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody));
+    }
+
+    private void OnAirPodsChanged(object? sender, AirPodsState value) => OnUi(() =>
+    {
+        var previous = _airPods;
+        if (previous.Equals(value)) return;
+        _airPods = value;
+        RaiseAirPodsProperties();
+
+        if (ShouldTriggerAirPodsBanner(previous, value))
+            TriggerAirPodsBanner();
+        else if (!value.IsConnected)
+        {
+            // Clear transient banner if AirPods disconnected
+            if (_airPodsBannerActive)
+            {
+                _airPodsBannerActive = false;
+                _airPodsBannerTimer.Stop();
+                RaiseMany(nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody));
+            }
+        }
+    });
+
+    private bool ShouldTriggerAirPodsBanner(AirPodsState previous, AirPodsState next)
+    {
+        if (!next.IsConnected || !next.IsAvailable) return false;
+        if (FocusModeEnabled) return false;
+        // Lower priority than urgent activities
+        if (PrimaryActivity is IslandActivity.Alarm or IslandActivity.Timer or IslandActivity.Q) return false;
+
+        if (!previous.IsConnected && next.IsConnected) return true;
+        if (previous.CaseLidOpen != next.CaseLidOpen && next.CaseLidOpen && next.BothInCase) return true;
+        if (previous.LeftCharging != next.LeftCharging || previous.RightCharging != next.RightCharging || previous.CaseCharging != next.CaseCharging) return true;
+        // Battery/model metadata often arrives after the Windows connection event. It updates the
+        // visible card, but must not replay the connection banner as a second animation.
+        return false;
+    }
+
+    private void TriggerAirPodsBanner()
+    {
+        var wasActive = _airPodsBannerActive;
+        _airPodsBannerActive = true;
+        _airPodsBannerTimer.Stop();
+        _airPodsBannerTimer.Start();
+        if (wasActive)
+        {
+            RaiseMany(nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody));
+            return;
+        }
+        _bannerSeq++;
+        RaiseMany(nameof(ShowBanner), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(BannerSeq), nameof(IsAirPodsBannerActive));
     }
 
     private void RaiseLayoutProperties()
@@ -1434,6 +1624,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _privacyService.Changed -= OnPrivacyChanged;
         _notificationTimer.Stop();
         _volumeWarningTimer.Stop();
+        _airPodsBannerTimer.Stop();
         _quoteTimer.Stop();
         if (_previewRetained) { _visionService.ReleasePreview(); _previewRetained = false; }
         _batteryService.Changed -= OnBatteryChanged;
@@ -1442,6 +1633,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _themeService.SystemThemeChanged -= OnSystemThemeChanged;
         _qSession.Changed -= OnQChanged;
         _qSession.Clear();
+        if (_airPodsService != null) _airPodsService.Changed -= OnAirPodsChanged;
     }
 }
 

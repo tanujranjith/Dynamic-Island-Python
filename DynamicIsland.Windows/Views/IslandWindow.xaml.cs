@@ -34,6 +34,7 @@ public partial class IslandWindow : Window
     private bool _suppressExpandedAnimation;
     private bool _liveTimerVisible;
     private bool _lastIsStatsStyle;
+    private bool _lastShowAirPodsCard;
     private Storyboard? _qThinkingAnimation;
     private bool _qFollowLatest = true;
 
@@ -56,6 +57,7 @@ public partial class IslandWindow : Window
         _liveTimerVisible = timerViewModel.ShowLiveTimer;
         LiveTimerStrip.Visibility = _liveTimerVisible ? Visibility.Visible : Visibility.Collapsed;
         _lastIsStatsStyle = viewModel.IsStatsStyle;
+        _lastShowAirPodsCard = viewModel.ShowAirPodsCard;
         _position = position;
         _settingsService = settingsService;
         _log = log;
@@ -227,6 +229,22 @@ public partial class IslandWindow : Window
                 });
             }
         }
+        else if (e.PropertyName == nameof(IslandViewModel.ShowAirPodsCard))
+        {
+            // AirPods battery/name properties are raised for every BLE packet. Only the card's
+            // visibility changes the expanded layout; content updates are handled by bindings.
+            var showAirPodsCard = _viewModel.ShowAirPodsCard;
+            if (showAirPodsCard == _lastShowAirPodsCard) return;
+            _lastShowAirPodsCard = showAirPodsCard;
+            if (_timerPanelOpen) return;
+            ApplyVisualMode();
+            if (_viewModel.IsExpanded) ApplyLayout(animate: true);
+        }
+        else if (e.PropertyName == nameof(IslandViewModel.IsAirPodsBannerActive))
+        {
+            if (_viewModel.IsAirPodsBannerActive) PlayAirPodsConnectionIntro();
+            else ReturnFromAirPodsCompactBanner();
+        }
         else if (e.PropertyName == nameof(IslandViewModel.QState) ||
                  e.PropertyName == nameof(IslandViewModel.QShowInlineThinking) ||
                  e.PropertyName == nameof(IslandViewModel.QResponse) ||
@@ -257,6 +275,66 @@ public partial class IslandWindow : Window
     }
 
     private Storyboard? _notifIntro;
+
+    private void PlayAirPodsConnectionIntro()
+    {
+        AirPodsImageScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        AirPodsImageScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        AirPodsImageTranslation.BeginAnimation(TranslateTransform.XProperty, null);
+        AirPodsImageTranslation.BeginAnimation(TranslateTransform.YProperty, null);
+        AirPodsCompactBanner.BeginAnimation(UIElement.OpacityProperty, null);
+        AirPodsConnectionImage.BeginAnimation(UIElement.OpacityProperty, null);
+        AirPodsImageScale.ScaleX = AirPodsImageScale.ScaleY = 0.82d;
+        AirPodsImageTranslation.X = -6d;
+        AirPodsImageTranslation.Y = 2d;
+        AirPodsCompactBanner.Opacity = 0d;
+        AirPodsConnectionImage.Opacity = 0d;
+
+        if (_viewModel.IsReducedMotion || _viewModel.IsExpanded || _timerPanelOpen)
+        {
+            AirPodsImageScale.ScaleX = AirPodsImageScale.ScaleY = 1d;
+            AirPodsImageTranslation.X = AirPodsImageTranslation.Y = 0d;
+            AirPodsCompactBanner.Opacity = 1d;
+            AirPodsConnectionImage.Opacity = 1d;
+            return;
+        }
+
+        var compactWidth = Metrics().cW;
+        var connectionWidth = Math.Clamp(compactWidth + 92d, 300d, 360d);
+        GlassShell.BeginAnimation(WidthProperty, null);
+        GlassShell.BeginAnimation(WidthProperty, new DoubleAnimation(connectionWidth, TimeSpan.FromMilliseconds(280))
+        {
+            EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.28 }
+        });
+        AirPodsCompactBanner.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0d, 1d, TimeSpan.FromMilliseconds(160)));
+        AirPodsConnectionImage.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0d, 1d, TimeSpan.FromMilliseconds(180)));
+        AirPodsImageScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.82d, 1d, TimeSpan.FromMilliseconds(380))
+        {
+            EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.16 }
+        });
+        AirPodsImageScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.82d, 1d, TimeSpan.FromMilliseconds(380))
+        {
+            EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.16 }
+        });
+        AirPodsImageTranslation.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(-6d, 0d, TimeSpan.FromMilliseconds(380))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        });
+        AirPodsImageTranslation.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(2d, 0d, TimeSpan.FromMilliseconds(380))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        });
+    }
+
+    private void ReturnFromAirPodsCompactBanner()
+    {
+        if (_viewModel.IsExpanded || _timerPanelOpen) return;
+        var compactWidth = Metrics().cW;
+        GlassShell.BeginAnimation(WidthProperty, new DoubleAnimation(compactWidth, TimeSpan.FromMilliseconds(320))
+        {
+            EasingFunction = new QuinticEase { EasingMode = EasingMode.EaseOut }
+        });
+    }
 
     // The notification "combo" entrance: pop + blur-in, spring scale, then an accent glow pulse and a
     // light sweep across the card (see the NotifIntro storyboard in IslandWindow.xaml).
@@ -301,6 +379,7 @@ public partial class IslandWindow : Window
         var timerSpace = _liveTimerVisible ? LiveTimerExtraHeight : 0d;
         var statsSpace = _viewModel.IsStatsStyle ? StatsDashboardExtraHeight : 0d;
         var qSpace = _viewModel.ShowQSurface ? QSurfaceExtraHeight : 0d;
+        var airPodsSpace = _viewModel.ShowAirPods ? 70d : 0d;
         // Compact dimensions are user-controlled and deliberately independent from the expanded
         // canvas.  Previously this method ignored IslandWidth/IslandHeight and used a preset for
         // both states, so adjusting the mini island could distort the expanded layout.
@@ -311,9 +390,9 @@ public partial class IslandWindow : Window
             // The media header, transport controls, and the live-activity cards need 260px+
             // after their outer margins.  The smaller values clipped the entire bottom row,
             // making RAM/network/battery appear to have disappeared.
-            IslandSize.Compact => (820d, 264d + quoteSpace + timerSpace + statsSpace + qSpace),
-            IslandSize.Large => (1000d, 322d + quoteSpace + timerSpace + statsSpace + qSpace),
-            _ => (900d, 292d + quoteSpace + timerSpace + statsSpace + qSpace)
+            IslandSize.Compact => (820d, 264d + quoteSpace + timerSpace + statsSpace + qSpace + airPodsSpace),
+            IslandSize.Large => (1000d, 322d + quoteSpace + timerSpace + statsSpace + qSpace + airPodsSpace),
+            _ => (900d, 292d + quoteSpace + timerSpace + statsSpace + qSpace + airPodsSpace)
         };
         // The transparent HWND must be at least as tall as the pill, otherwise WPF clips
         // a correctly measured Stats dashboard at the canvas boundary.

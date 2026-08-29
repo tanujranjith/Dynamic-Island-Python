@@ -24,5 +24,7 @@
     <Compile Include="..\DynamicIsland.Windows\Infrastructure\ViewModelNotificationGroups.cs" Link="ViewModelNotificationGroups.cs" />
     <Compile Include="..\DynamicIsland.Windows\Infrastructure\MediaPresentation.cs" Link="MediaPresentation.cs" />
     <Compile Include="..\DynamicIsland.Windows\Models\MediaInfo.cs" Link="MediaInfo.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Models\AirPodsState.cs" Link="AirPodsState.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\System\AirPodsParser.cs" Link="AirPodsParser.cs" />
   </ItemGroup>
 </Project>
