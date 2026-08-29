@@ -14,6 +14,11 @@ active window, uses OCR and optional vision input, and streams answers directly
 inside the Island. See [`Q.md`](Q.md) for setup, provider configuration, and the
 privacy model.
 
+The native build also detects a paired, connected **AirPods** or compatible Beats
+device through Windows Bluetooth LE advertisements. The Island can show the model,
+connection state, left/right/case battery, charging state, case-lid state, and
+in-ear state without requiring a driver or a companion service.
+
 <p align="center">
   <img src="media/current-expanded-island.png" alt="Current Dynamic Island expanded media, audio, and system status surface" width="900">
 </p>
@@ -100,6 +105,11 @@ references under `media/legacy/` and are no longer used as the README hero.
   a current-conditions weather card.
 - **Battery & charging** — percentage plus a dedicated charging capsule; degrades
   cleanly on desktops with no battery.
+- **AirPods** - native BLE advertisement detection for paired, connected AirPods
+  and compatible Beats devices, with rotating-address tolerance, model detection,
+  left/right/case battery, charging flags, case status, and in-ear status. Public
+  advertisements expose battery values in 10% steps, so the UI displays honest
+  ranges such as 90-99% instead of implying an exact value.
 - **Timer & alarm** — presets and custom durations, a *done* state with sound,
   snooze/dismiss, and state that survives a restart.
 - **Q visual assistant** — invoke with `Ctrl+Alt+Q`, capture the active window or
@@ -150,6 +160,24 @@ The island appears at the top-center of your primary monitor and lives in the
 system tray (right-click for Settings, Recenter, Quit). Windows SmartScreen may
 warn about an unsigned app the first time — choose *More info → Run anyway*.
 
+### AirPods support
+
+AirPods support is automatic: pair the device in Windows, connect it, and leave
+Bluetooth enabled. The app listens passively for Apple manufacturer data (0x004C)
+and only accepts advertisements when exactly one matching AirPods/Beats device is
+reported as connected by Windows. Rotating BLE addresses are tolerated; the app does
+not write pairing records or connect to the earbuds.
+
+Battery values from the public advertisement are coarse 10% buckets. A displayed
+90-99% means the device reported the 90% bucket, not that the app measured an exact
+90% charge. A missing component battery is omitted rather than shown as 0%.
+
+ANC, transparency, gestures, and other controls are intentionally not exposed:
+Windows does not provide a safe public API for controlling those AirPods features
+from this driver-free integration. Availability also depends on a Bluetooth adapter
+that supports LE advertisements and on Windows exposing the paired device as
+connected.
+
 > The `.exe` is ~287 MB (it bundles the .NET runtime), which is over GitHub's
 > 100 MB per-file limit, so it's distributed as a **release asset** rather than
 > committed to the repo.
@@ -188,7 +216,7 @@ named exactly `DynamicIsland.exe`:
 ```powershell
 dotnet publish .\DynamicIsland.Windows -c Release -r win-x64
 # rename/copy the output to DynamicIsland.exe, then:
-gh release create v1.0.3 ".\DynamicIsland.Windows\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish\DynamicIsland.Windows.exe#DynamicIsland.exe" --title "v1.0.3" --notes "OpenAI reasoning controls and Q reliability updates"
+gh release create v1.0.4 ".\DynamicIsland.Windows\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish\DynamicIsland.Windows.exe#DynamicIsland.exe" --title "v1.0.4" --notes-file .\RELEASE_NOTES.md
 ```
 
 The `#DynamicIsland.exe` suffix uploads the asset under that name, which is what the

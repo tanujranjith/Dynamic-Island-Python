@@ -25,6 +25,7 @@ public partial class App : System.Windows.Application
     private ClockService? _clock;
     private TimerAlarmService? _timerAlarm;
     private ThemeService? _theme;
+    private AirPodsService? _airPods;
     private VisionModelManager? _visionModels;
     private VisionService? _vision;
     private WeatherService? _weather;
@@ -115,6 +116,7 @@ public partial class App : System.Windows.Application
         _theme.SystemThemeChanged += (_, _) => Dispatcher.BeginInvoke(ApplyGlobalTheme);
         _visionModels = new VisionModelManager(_log);
         _vision = new VisionService(_log, _visionModels);
+        _airPods = new AirPodsService(_log);
         _weather = new WeatherService(_log);
         _sysMon = new SystemMonitorService();
         _spectrum = new AudioSpectrumService(_log);
@@ -138,7 +140,7 @@ public partial class App : System.Windows.Application
         _position = new WindowPositionService();
         _islandViewModel = new IslandViewModel(_settings, _media, _audio, _battery, _clock, _timerAlarm, _theme,
             _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy, _notificationHistory,
-            _qSession, _qScreen, _qSpeech, _qSecrets);
+            _qSession, _qScreen, _qSpeech, _qSecrets, _airPods);
         _timerViewModel = new TimerAlarmViewModel(_timerAlarm, _settings.Use24HourClock);
         _islandWindow = new IslandWindow(_islandViewModel, _timerViewModel, _position, _settingsService, _log, _qScreen);
         _islandWindow.OpenSettingsRequested += (_, _) => ShowSettings();
@@ -178,6 +180,7 @@ public partial class App : System.Windows.Application
         _audio.Start();
         _timerAlarm.Start();
         _privacy.Start();
+        _airPods?.Start();
         ApplyVisionSettings();
         _weather.Start();
         _stocks.Start();
@@ -475,6 +478,7 @@ public partial class App : System.Windows.Application
         _hotkeys?.Dispose();
         _showSettingsSignal?.Set();
         _showSettingsSignal?.Dispose();
+        _airPods?.Dispose();
         _privacy?.Dispose();
         _media?.Dispose();
         _audio?.Dispose();

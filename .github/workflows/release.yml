@@ -4,8 +4,8 @@ name: Release
 # asset named DynamicIsland.exe — which is exactly what the README's download
 # button (releases/latest/download/DynamicIsland.exe) points at.
 #
-# Trigger either by pushing a version tag:   git tag v1.0.0 && git push origin v1.0.0
-# or manually from the Actions tab (Run workflow → enter a tag like v1.0.0).
+# Trigger either by pushing a version tag:   git tag v1.0.4 && git push origin v1.0.4
+# or manually from the Actions tab (Run workflow → enter a tag like v1.0.4).
 
 on:
   push:
@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v1.0.0)'
+        description: 'Release tag (e.g. v1.0.4)'
         required: true
-        default: v1.0.0
+        default: v1.0.4
 
 permissions:
   contents: write

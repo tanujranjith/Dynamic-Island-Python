@@ -13,10 +13,10 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyName>DynamicIsland.Windows</AssemblyName>
     <RootNamespace>DynamicIsland.Windows</RootNamespace>
-    <Version>1.0.3</Version>
-    <AssemblyVersion>1.0.3.0</AssemblyVersion>
-    <FileVersion>1.0.3.0</FileVersion>
-    <InformationalVersion>1.0.3</InformationalVersion>
+    <Version>1.0.4</Version>
+    <AssemblyVersion>1.0.4.0</AssemblyVersion>
+    <FileVersion>1.0.4.0</FileVersion>
+    <InformationalVersion>1.0.4</InformationalVersion>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -31,6 +31,7 @@
     <None Include="..\README.md" Link="README.md" Pack="false" Condition="Exists('..\README.md')" />
     <None Include="..\MIGRATION_REPORT.md" Link="MIGRATION_REPORT.md" Pack="false" Condition="Exists('..\MIGRATION_REPORT.md')" />
     <Resource Include="Assets\settings-preview-backdrop.png" />
+    <Resource Include="Assets\airpods-pro.png" />
   </ItemGroup>
   <ItemGroup>
     <!-- Camera "vision" feature (person presence + owner face recognition). The native runtime ships

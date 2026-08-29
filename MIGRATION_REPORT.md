@@ -202,3 +202,24 @@ monitor). Screenshots are in [`test-artifacts/`](test-artifacts/).
 - A corrected native Q overlay screenshot still needs to be captured after the
   latest visual fixes; see [`design-qa.md`](design-qa.md). The current Q behavior
   and privacy model are documented in [`Q.md`](Q.md).
+
+## AirPods release audit
+
+The 1.0.4 native AirPods integration uses a WinRT Bluetooth LE watcher for Apple
+manufacturer data (company ID 0x004C), then correlates advertisements with one
+uniquely connected paired AirPods or compatible Beats device. Rotating BLE addresses
+are accepted; the app does not write pairing records or connect to the earbuds.
+
+The presentation model exposes model, left/right/case battery, charging, case-lid,
+and in-ear state. Public advertisements provide coarse 10% battery buckets, so the
+UI renders ranges such as 90-99% and omits unavailable components rather than
+inventing an exact value or showing 0%.
+
+The view model suppresses RSSI/timestamp-only refreshes, preventing ordinary BLE
+traffic from restarting the expanded-island animation. ANC, transparency, gesture,
+and similar controls remain intentionally deferred because Windows exposes no safe
+public API for those controls in this driver-free integration.
+
+Verification for this release: the full Release test suite passes 80/80, and the
+production WPF project builds with 0 errors. Physical-AirPods validation remains
+hardware and adapter dependent and is not claimed as automated coverage.

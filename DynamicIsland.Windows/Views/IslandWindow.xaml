@@ -456,6 +456,39 @@
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>
+                    <Border x:Name="AirPodsCompactBanner" Grid.ColumnSpan="3" Padding="12,0"
+                            Background="{Binding IslandSurfaceBrush}" BorderThickness="0" Panel.ZIndex="10"
+                            Visibility="{Binding IsAirPodsBannerActive, Converter={StaticResource BoolToVisibility}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="50" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid x:Name="AirPodsConnectionVisual" Width="50" Height="50" VerticalAlignment="Center" ClipToBounds="False">
+                                <Image x:Name="AirPodsConnectionImage" Source="/DynamicIsland.Windows;component/Assets/airpods-pro.png"
+                                       Width="50" Height="50" Stretch="Uniform" SnapsToDevicePixels="True"
+                                       RenderTransformOrigin="0.5,0.5">
+                                    <Image.RenderTransform>
+                                        <TransformGroup>
+                                            <ScaleTransform x:Name="AirPodsImageScale" ScaleX="1" ScaleY="1" />
+                                            <TranslateTransform x:Name="AirPodsImageTranslation" X="0" Y="0" />
+                                        </TransformGroup>
+                                    </Image.RenderTransform>
+                                </Image>
+                            </Grid>
+                            <StackPanel Grid.Column="1" Margin="8,0,8,0" VerticalAlignment="Center">
+                                <TextBlock Text="AIRPODS CONNECTED" FontFamily="Segoe UI Variable Text" FontSize="8" FontWeight="SemiBold" Foreground="#FF9EE2AD" />
+                                <TextBlock Text="{Binding AirPodsName}" Margin="0,1,0,0" FontFamily="Segoe UI Variable Text" FontSize="10.5" FontWeight="SemiBold"
+                                           Foreground="{StaticResource AppleWhite}" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Ellipse Width="6" Height="6" Margin="0,0,5,0" Fill="#FF30D158" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding AirPodsCompactBatteryText}" FontFamily="Segoe UI Variable Text" FontSize="9" FontWeight="SemiBold"
+                                           Foreground="#FF9EE2AD" TextTrimming="CharacterEllipsis" MaxWidth="142" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
                 </Grid>
 
                 <!-- Stats-heavy compact mode: keep the glanceable lane, but expose the key status values. -->
@@ -495,6 +528,7 @@
                         <RowDefinition Height="50" />
                         <!-- The active deck sizes to its content: Apple cards stay compact while
                              the Stats dashboard gets enough height for all three status tiles. -->
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
@@ -740,9 +774,35 @@
                         </Grid>
                     </Border>
 
+                    <!-- AirPods status card: a complete, compact row rather than an empty battery panel. -->
+                    <Border x:Name="AirPodsCard" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Height="58" Margin="0,8,0,0" Padding="14,8" CornerRadius="16"
+                            Background="#FF17191D" BorderBrush="#24FFFFFF" BorderThickness="1"
+                            Visibility="{Binding ShowAirPodsCard, Converter={StaticResource BoolToVisibility}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <Border Width="38" Height="38" CornerRadius="12" Background="#FF242A31" VerticalAlignment="Center">
+                                <Image Source="/DynamicIsland.Windows;component/Assets/airpods-pro.png"
+                                       Width="38" Height="38" Stretch="Uniform" SnapsToDevicePixels="True" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0,12,0" VerticalAlignment="Center">
+                                <TextBlock Text="AIRPODS" FontFamily="Segoe UI Variable Text" FontSize="8" FontWeight="SemiBold" Foreground="#FF8F9BA8" />
+                                <TextBlock Text="{Binding AirPodsName}" Margin="0,2,0,0" FontFamily="Segoe UI Variable Text" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{StaticResource AppleWhite}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding AirPodsStatusText}" Margin="0,1,0,0" FontFamily="Segoe UI Variable Text" FontSize="9" Foreground="#FF9BA8B5" />
+                            </StackPanel>
+                            <Border Grid.Column="2" Padding="10,6" CornerRadius="12" Background="#142D21" BorderBrush="#344D3D" BorderThickness="1" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse Width="6" Height="6" Margin="0,0,6,0" Fill="#FF30D158" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding AirPodsBatterySummary}" FontFamily="Segoe UI Variable Text" FontSize="10" FontWeight="SemiBold"
+                                               Foreground="#FF9EE2AD" TextTrimming="CharacterEllipsis" MaxWidth="180" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+
                     <!-- Active timer live activity: it shares the expanded island and appears directly
                          beneath the existing volume/system/time deck in either visual style. -->
-                    <Border x:Name="LiveTimerStrip" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2"
+                    <Border x:Name="LiveTimerStrip" Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2"
                             Height="76" Margin="0,10,0,0" Padding="14,10" CornerRadius="17"
                             Background="#FF151517" Visibility="Collapsed">
                         <Grid>
@@ -1225,8 +1285,21 @@
         </Grid>
 
         <!-- Notifications retain their real system behaviour, but use the same quiet black material. -->
-        <Grid x:Name="NotifBanner" Margin="0,292,0,0" VerticalAlignment="Top" HorizontalAlignment="Center"
-              Visibility="{Binding ShowBanner, Converter={StaticResource BoolToVisibility}}" Opacity="0">
+        <Grid x:Name="NotifBanner" Margin="0,292,0,0" VerticalAlignment="Top" HorizontalAlignment="Center" Opacity="0">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding ShowBanner}" Value="True" />
+                                <Condition Binding="{Binding IsAirPodsBannerActive}" Value="False" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
             <Grid.RenderTransform><ScaleTransform x:Name="NotifScale" ScaleX="1" ScaleY="1" /></Grid.RenderTransform>
             <Border x:Name="NotifCard" MaxWidth="480" Padding="14,10" CornerRadius="18" Background="#FA111113" BorderBrush="#16FFFFFF" BorderThickness="1" ClipToBounds="True">
                 <Border.Effect><DropShadowEffect x:Name="NotifGlow" BlurRadius="14" ShadowDepth="3" Opacity="0.42" Color="#000000" /></Border.Effect>
