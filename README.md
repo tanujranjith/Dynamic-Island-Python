@@ -117,6 +117,9 @@ references under `media/legacy/` and are no longer used as the README hero.
   provider, and stream an answer in the Island. Q supports Ask and Say modes,
   typed follow-ups, Windows dictation, retry/copy/recapture/new-question actions,
   provider model discovery, and configurable one-click shortcuts.
+- **ChatGPT / Codex for Q** - sign in through the official Codex device-code flow
+  and use eligible Codex subscription limits without an OpenAI API key. The
+  existing API-key providers remain available and unchanged.
 - **Quick actions** — camera presence, timer, settings, collapse, and a menu, as
   one row of equal circular buttons.
 - **System integration** — per-monitor-V2 DPI aware, multi-monitor aware,
@@ -155,6 +158,14 @@ provider key if needed, choose whether to capture the active window or monitor,
 and use **Test connection**. The first Q session also presents a disclosure before
 screen context is sent to a provider. Local Ollama setups can use the configurable
 base URL without an API key.
+
+For ChatGPT/Codex testing, the release also includes
+**`DynamicIsland-Codex-Test-v1.0.6-win-x64.zip`**. Extract the complete folder and
+launch its `DynamicIsland.exe`; the ZIP includes a pinned, SHA-256-verified official
+Codex runtime. The normal **`DynamicIsland.exe`** remains the standalone option and
+uses an existing supported official Codex installation. Signing out of Codex in Dynamic Island also
+signs out official Codex apps for that Windows user. See [`Q.md`](Q.md) for the
+subscription limits, privacy model, and security boundaries.
 
 The island appears at the top-center of your primary monitor and lives in the
 system tray (right-click for Settings, Recenter, Quit). Windows SmartScreen may
@@ -216,7 +227,7 @@ named exactly `DynamicIsland.exe`:
 ```powershell
 dotnet publish .\DynamicIsland.Windows -c Release -r win-x64
 # rename/copy the output to DynamicIsland.exe, then:
-gh release create v1.0.4 ".\DynamicIsland.Windows\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish\DynamicIsland.Windows.exe#DynamicIsland.exe" --title "v1.0.4" --notes-file .\RELEASE_NOTES.md
+gh release create v1.0.6 ".\DynamicIsland.Windows\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish\DynamicIsland.Windows.exe#DynamicIsland.exe" --title "v1.0.6" --notes-file .\RELEASE_NOTES.md
 ```
 
 The `#DynamicIsland.exe` suffix uploads the asset under that name, which is what the

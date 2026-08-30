@@ -25,6 +25,7 @@ public sealed class AirPodsService : IDisposable
     private AirPodsModel _boundModel = AirPodsModel.Unknown;
     private bool _hasPairedConnectedAirPods;
     private int _connectedAirPodsCount;
+    private int _pairedDisconnectPolls;
     private short _rssiMin = -75;
     private int _lifecycleGeneration;
     private readonly SemaphoreSlim _pairedPollGate = new(1, 1);
@@ -120,6 +121,7 @@ public sealed class AirPodsService : IDisposable
             _right = null;
             _hasPairedConnectedAirPods = false;
             _connectedAirPodsCount = 0;
+            _pairedDisconnectPolls = 0;
             var next = AirPodsState.Disconnected(_isBluetoothAvailable);
             var changed = _current.HasPresentationChangedFrom(next);
             _current = next;
@@ -428,7 +430,8 @@ public sealed class AirPodsService : IDisposable
     private AirPodsState MergeStateLocked()
     {
         if (_left == null && _right == null)
-            return AirPodsState.Disconnected(_isBluetoothAvailable);
+            return AirPodsConnectionPolicy.AdvertisementExpiredState(
+                _current, _isBluetoothAvailable, _hasPairedConnectedAirPods);
 
         // Helper to pick model
         AirPodsModel PickModel()
@@ -559,8 +562,13 @@ public sealed class AirPodsService : IDisposable
             _right = null;
             try { _leftTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
             try { _rightTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
-            var next = AirPodsState.Disconnected(_isBluetoothAvailable);
-            if (next.Equals(_current)) return;
+            var next = AirPodsConnectionPolicy.AdvertisementExpiredState(
+                _current, _isBluetoothAvailable, _hasPairedConnectedAirPods);
+            if (!next.HasPresentationChangedFrom(_current))
+            {
+                _current = next;
+                return;
+            }
             _current = next;
             toRaise = next;
         }
@@ -727,7 +735,9 @@ public sealed class AirPodsService : IDisposable
                 var ambiguous = connectedCount > 1;
                 bool prevConnected = _hasPairedConnectedAirPods;
                 _connectedAirPodsCount = connectedCount;
-                _hasPairedConnectedAirPods = foundConnected && !ambiguous && foundAddress.HasValue;
+                var observedConnected = foundConnected && !ambiguous && foundAddress.HasValue;
+                _hasPairedConnectedAirPods = AirPodsConnectionPolicy.ResolvePairedConnection(
+                    prevConnected, observedConnected, ref _pairedDisconnectPolls);
                 if (_hasPairedConnectedAirPods && !string.IsNullOrWhiteSpace(foundName))
                     _deviceName = StripFindMySuffix(foundName!);
                 else if (!_hasPairedConnectedAirPods)

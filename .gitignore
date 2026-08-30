@@ -2,6 +2,7 @@
 [Bb]in/
 [Oo]bj/
 [Oo]ut/
+dist/
 
 # ── Workspace-local .NET SDK / NuGet (do NOT commit) ────────
 .dotnet/

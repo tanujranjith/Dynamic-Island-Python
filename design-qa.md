@@ -1,67 +1,58 @@
-# Q Island Design QA
+# AirPods expanded-card design QA
 
-**Source visual truth**
+- Defect reference: user-provided local screenshot (not committed with the repository).
+- Reference pixels: 977 x 113
+- Intended viewport: top-center desktop Island on the user's current monitor, native Windows density.
+- State: Normal-size Apple expanded Island, volume/system/clock deck visible, connected AirPods card visible, auto-grow disabled.
+- Current implementation evidence: the defect reference above is the post-second-fix capture; the user visually inspected the live post-third-fix root app and confirmed the clipping is gone. No additional desktop capture was retained.
 
-- Local generated design reference (not committed to the repository).
-- Source pixels: 1684 x 934.
+## Findings
 
-**Implementation evidence**
+- [P1] AirPods card still clipped after the first host-window correction
+  - Location: bottom row of the expanded Island.
+  - Evidence: the defect reference shows the shell ending through the AirPods card. Runtime logs confirmed the native host and shell had already reached the requested 362 px height, so stale native sizing was no longer the active cause.
+  - Root cause: the AirPods row had a fixed 58 px height, while the three-line content and interface scaling needed more room. In addition, disabling optional auto-grow also skipped the content measurement needed to prevent mandatory vertical clipping.
+  - Fix: use a 64 px minimum row height, reserve 76 px for the card and margin, apply vertical anti-clipping measurement regardless of the optional auto-grow preference, and measure only after the expanded surface is visible.
 
-- Pre-fix user capture (local temporary file; not committed to the repository).
-- Capture pixels: 901 x 511.
-- Native WPF surface; CSS viewport and browser device scale do not apply. Windows display density was not available in the capture metadata.
-- State: Q expanded, Complete, empty provider response, Chrome source, dark theme.
+- [P1] Expanded shell exceeds the stale transparent host window
+  - Location: Island expansion event and native host bounds.
+  - Evidence: the post-second-fix screenshot remains clipped. Runtime layout evidence records `window=1200x332`, `shell=900x368`, and `cardBottom=347`; the shell and card are correctly sized but the host cuts them off at 332 px.
+  - Root cause: the expanded-state handler animated only the inner shell. If AirPods connected while compact, the native host retained the smaller height calculated at startup.
+  - Fix: run the complete layout path on every expansion and whenever AirPods-card visibility changes, including while compact, so host and shell dimensions are recalculated together.
 
-**Full-view comparison evidence**
+## Required fidelity surfaces
 
-- The Q shell preserves the mockup's overall information architecture: identity header, source/status row, user card, assistant card, Ask/Say controls, new/quit actions, and pinned composer.
-- The implementation capture exposed media artwork through the shell's top-left rounded corner. The mockup has a fully opaque, consistently clipped shell.
-- The implementation also showed a native white text-box scrollbar and an empty assistant response while reporting Complete; neither appears in the visual target.
+- Fonts and typography: existing Segoe UI Variable styling retained.
+- Spacing and layout rhythm: existing 8 px top margin and 16 px corner radius retained; the row may grow vertically when scaling requires it.
+- Colors and visual tokens: unchanged.
+- Image quality and asset fidelity: existing packaged AirPods image retained at 38 x 38 with uniform scaling.
+- Copy and content: unchanged.
 
-**Focused region comparison evidence**
+## Comparison history
 
-- Top-left corner: a bright media-art fragment is visible outside the apparent rounded shell in the implementation; the source has a clean rounded mask.
-- Composer: the implementation shows a white vertical scrollbar at the right edge of the prompt field; the source composer is visually uninterrupted.
-- Assistant card: the implementation displays the empty-state prompt after submission while its status says Complete; the source shows either active streaming content or a real response.
+1. Original capture: bottom of the AirPods row clipped.
+2. First correction: native host-window sizing used the newly requested dimensions instead of the stale previous measurement.
+3. Post-first-fix capture: P1 remained; runtime logs showed `target=900x362` and `final=901x363`, isolating the issue to inner content sizing.
+4. Second correction: removed the fixed row height, increased its minimum/reserved space, and made vertical anti-clipping independent of optional auto-grow.
+5. Automated evidence: 113 release tests pass; Release build and self-contained publish complete; published and root executable SHA-256 hashes match.
+6. Post-second-fix visual evidence: `codex-clipboard-vj5Gfw.png` still shows P1 clipping. Diagnostics isolate the mismatch to a 332 px host containing a 368 px shell whose card ends at 347 px.
+7. Third correction: expanded-state and AirPods-visibility changes now run the full host-window layout path before animating the shell.
+8. Automated evidence: 113 release tests pass; the Release build and self-contained publish complete; published and root executable SHA-256 hashes match.
+9. Post-third-fix visual evidence: the user inspected the same expanded AirPods state in the relaunched root app and confirmed the full card is visible.
 
-**Findings and comparison history**
+## Implementation checklist
 
-- [P1] Rounded-shell layer bleed.
-  - Earlier evidence: media artwork visible through the top-left corner.
-  - Fix made: apply a real `RectangleGeometry` rounded clip to the entire `GlassShell` and refresh it whenever shell size or settings change.
-  - Post-fix visual evidence: unavailable; the native overlay is not exposed as a targetable window to the automated capture helper.
-- [P1] Empty provider streams incorrectly reported as Complete.
-  - Earlier evidence: status reads Complete while the assistant card says “Ask Q about what you’re looking at.”
-  - Fix made: convert an empty completed stream into an actionable Error state with Retry guidance.
-  - Post-fix evidence: covered by the new unit test; native visual capture remains unavailable.
-- [P2] Native white composer scrollbar diverges from the mockup.
-  - Earlier evidence: white up/down scrollbar inside the prompt field.
-  - Fix made: hide the prompt field's native vertical scrollbar while retaining multiline input and Shift+Enter.
-  - Post-fix visual evidence: unavailable for the same native-capture limitation.
+- [x] Preserve the existing AirPods card styling and asset.
+- [x] Correct host-window dimension selection.
+- [x] Make the inner AirPods row responsive to text/interface scaling.
+- [x] Enforce mandatory vertical anti-clipping when auto-grow is disabled.
+- [x] Add sizing regression coverage and runtime layout diagnostics.
+- [x] Recompute the native host window whenever expansion or AirPods visibility changes.
+- [x] Build, publish, update, and relaunch the root application.
+- [x] Verify the same expanded live state with the user.
 
-**Required fidelity surfaces**
+## Follow-up polish
 
-- Fonts and typography: Segoe UI Variable hierarchy is consistent with the source; post-fix runtime antialiasing not recaptured.
-- Spacing and layout rhythm: overall structure matches, but post-fix corner and composer rendering require a fresh capture.
-- Colors and visual tokens: dark navy shell/cards and blue accent are consistent with the source.
-- Image quality and asset fidelity: no generated visual assets are required inside Q; the unintended album-art fragment was a clipping defect and is now masked in code.
-- Copy and content: empty completion now produces a clear provider error instead of misleading placeholder copy.
+- No additional visual mismatch was reported after the final host-window correction.
 
-**Implementation checklist**
-
-- [x] Apply physical rounded clipping to the complete Island surface.
-- [x] Remove the native composer scrollbar.
-- [x] Handle empty provider responses as errors.
-- [x] Add regression coverage and run the complete test suite.
-- [ ] Capture the corrected native Q surface in the same state and confirm the corner is clean.
-
-final result: blocked
-
-Blocker: a post-fix native WPF overlay screenshot is not available from the automated capture helper; visual confirmation needs the next user screenshot.
-
-## Documentation publishing note
-
-The raw desktop captures in `test-artifacts/` are local QA evidence and may show
-the contents of the active test window. The public README uses only the clean
-settings and timer crops; do not publish full-desktop captures without reviewing
-and redacting their visible content first.
+final result: passed
