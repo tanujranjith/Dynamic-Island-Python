@@ -3,8 +3,8 @@ name: Release
 # Builds the normal self-contained app plus an opt-in test ZIP containing a
 # pinned, hash-verified official Codex runtime.
 #
-# Trigger either by pushing a version tag:   git tag v1.0.6 && git push origin v1.0.6
-# or manually from the Actions tab (Run workflow and enter a tag like v1.0.6).
+# Trigger either by pushing a version tag or manually from the Actions tab.
+# The tag must be vMAJOR.MINOR.PATCH and must match the project version.
 
 on:
   push:
@@ -12,9 +12,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v1.0.6)'
+        description: 'Release tag (vMAJOR.MINOR.PATCH)'
         required: true
-        default: v1.0.6
 
 permissions:
   contents: write
@@ -24,6 +23,31 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve and validate release version
+        id: version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $tag = $env:RELEASE_TAG.Trim()
+          if ($tag -notmatch '^v(?<Version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$') {
+            throw "Release tag '$tag' must use vMAJOR.MINOR.PATCH format."
+          }
+
+          $appVersion = $Matches.Version
+          [xml]$project = Get-Content .\DynamicIsland.Windows\DynamicIsland.Windows.csproj
+          $versionNode = $project.SelectSingleNode('/Project/PropertyGroup/Version')
+          if ($null -eq $versionNode -or [string]::IsNullOrWhiteSpace($versionNode.InnerText)) {
+            throw 'Project version could not be read from DynamicIsland.Windows.csproj.'
+          }
+          $projectVersion = $versionNode.InnerText.Trim()
+          if ($projectVersion -ne $appVersion) {
+            throw "Release tag version '$appVersion' does not match project version '$projectVersion'."
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "app_version=$appVersion" >> $env:GITHUB_OUTPUT
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
@@ -54,19 +78,22 @@ jobs:
 
       - name: Package hash-verified Codex test build
         shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
         run: |
           .\scripts\Package-CodexTestBuild.ps1 `
             -PublishedExe dist\DynamicIsland.exe `
             -CodexExe dist\codex-x86_64-pc-windows-msvc.exe `
             -CodeModeHostExe dist\codex-code-mode-host-x86_64-pc-windows-msvc.exe `
-            -OutputDirectory dist
+            -OutputDirectory dist `
+            -AppVersion $env:APP_VERSION
 
       - name: Create / update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
           files: |
             dist/DynamicIsland.exe
-            dist/DynamicIsland-Codex-Test-v1.0.6-win-x64.zip
+            dist/DynamicIsland-Codex-Test-v${{ steps.version.outputs.app_version }}-win-x64.zip
