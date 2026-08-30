@@ -201,6 +201,67 @@
             <Setter Property="FontSize" Value="12" />
         </Style>
 
+        <Style x:Key="QSelectorComboBoxItem" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#FFE8EDF5" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="#FF223149" /></Trigger>
+                <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#FF173B65" /><Setter Property="Foreground" Value="White" /></Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="QSelectorComboBox" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="#FFE8EDF5" />
+            <Setter Property="Background" Value="#FF121923" />
+            <Setter Property="BorderBrush" Value="#FF34445B" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,0,30,0" />
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource QSelectorComboBoxItem}" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="SelectorChrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="18">
+                                <Grid>
+                                    <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" HorizontalAlignment="Left"
+                                                      Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}" />
+                                    <TextBlock Text="&#xE70D;" FontFamily="Segoe Fluent Icons" FontSize="10" Foreground="#FF91A0B5"
+                                               Margin="0,0,12,0" HorizontalAlignment="Right" VerticalAlignment="Center" IsHitTestVisible="False" />
+                                </Grid>
+                            </Border>
+                            <ToggleButton x:Name="DropDownToggle" Background="Transparent" BorderThickness="0" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent" /></ControlTemplate></ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="Fade">
+                                <Border Margin="0,5,0,0" MinWidth="{Binding PlacementTarget.ActualWidth, RelativeSource={RelativeSource AncestorType={x:Type Popup}}}"
+                                        MaxHeight="270" Background="#FF0D141F" BorderBrush="#FF34445B" BorderThickness="1" CornerRadius="12" Padding="4">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SelectorChrome" Property="BorderBrush" Value="#FF5685B9" /><Setter TargetName="SelectorChrome" Property="Background" Value="#FF172131" /></Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="SelectorChrome" Property="BorderBrush" Value="#FF4D9AFF" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="SelectorChrome" Property="Opacity" Value="0.45" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="QResponseActionButton" TargetType="Button" BasedOn="{StaticResource QButtonBase}">
             <Setter Property="Foreground" Value="#FFC4CCDA" />
             <Setter Property="Background" Value="#FF131A24" />
@@ -775,7 +836,7 @@
                     </Border>
 
                     <!-- AirPods status card: a complete, compact row rather than an empty battery panel. -->
-                    <Border x:Name="AirPodsCard" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Height="58" Margin="0,8,0,0" Padding="14,8" CornerRadius="16"
+                    <Border x:Name="AirPodsCard" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" MinHeight="64" Margin="0,8,0,0" Padding="14,8" CornerRadius="16"
                             Background="#FF17191D" BorderBrush="#24FFFFFF" BorderThickness="1"
                             Visibility="{Binding ShowAirPodsCard, Converter={StaticResource BoolToVisibility}}">
                         <Grid>
@@ -862,7 +923,7 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="72" />
                                 <RowDefinition Height="*" />
-                                <RowDefinition Height="62" />
+                                <RowDefinition Height="104" />
                                 <RowDefinition Height="58" />
                             </Grid.RowDefinitions>
 
@@ -996,15 +1057,40 @@
                                         ToolTip="Jump to latest response" AutomationProperties.Name="Jump to latest response" />
                             </Grid>
 
-                            <Grid Grid.Row="2" Margin="0,2,0,12">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <Border VerticalAlignment="Center" Background="#FF121923" BorderBrush="#FF2A3546" BorderThickness="1" CornerRadius="21" Padding="3">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button Content="Ask" Click="QAsk_Click" Style="{StaticResource QAskModeButton}" AutomationProperties.Name="Ask mode" />
-                                        <Button Content="Say" Click="QSay_Click" Style="{StaticResource QSayModeButton}" AutomationProperties.Name="Say mode" />
-                                    </StackPanel>
-                                </Border>
-                                <ScrollViewer Grid.Column="1" Margin="12,0,10,0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                            <Grid Grid.Row="2" Margin="0,2,0,10">
+                                <Grid.RowDefinitions><RowDefinition Height="42" /><RowDefinition Height="42" /></Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
+                                    <Border Background="#FF121923" BorderBrush="#FF2A3546" BorderThickness="1" CornerRadius="21" Padding="3">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="Ask" Click="QAsk_Click" Style="{StaticResource QAskModeButton}" AutomationProperties.Name="Ask mode" />
+                                            <Button Content="Say" Click="QSay_Click" Style="{StaticResource QSayModeButton}" AutomationProperties.Name="Say mode" />
+                                        </StackPanel>
+                                    </Border>
+                                    <ComboBox Width="142" Height="38" Margin="10,0,0,0" Style="{StaticResource QSelectorComboBox}"
+                                              ItemsSource="{Binding QModelOptions}" SelectedItem="{Binding QSelectedModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              ToolTip="Model" AutomationProperties.Name="Q model" />
+                                    <ComboBox Width="96" Height="38" Margin="8,0,0,0" Style="{StaticResource QSelectorComboBox}"
+                                              ItemsSource="{Binding QReasoningEffortOptions}" SelectedItem="{Binding QReasoningEffort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              ToolTip="Reasoning effort" AutomationProperties.Name="Q reasoning effort" />
+                                    <Button Width="138" Height="38" Margin="8,0,0,0" Style="{StaticResource QActionButton}"
+                                            Content="{Binding QCodexChipText}" Command="{Binding CodexPrimaryActionCommand}"
+                                            ToolTip="{Binding QCodexAccountDetails}" AutomationProperties.Name="ChatGPT Codex account"
+                                            Visibility="{Binding QIsCodexSelected, Converter={StaticResource BoolToVisibility}}" />
+                                    <Button Width="38" Height="38" Margin="6,0,0,0" Style="{StaticResource QResponseActionButton}"
+                                            Content="&#xE8D7;" FontFamily="Segoe Fluent Icons" Command="{Binding SignOutCodexCommand}"
+                                            ToolTip="Sign out of ChatGPT / Codex" AutomationProperties.Name="Sign out of ChatGPT Codex"
+                                            Visibility="{Binding QShowCodexSignOut, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                                    <Button Click="QNew_Click" Style="{StaticResource QActionButton}" ToolTip="Start a new question" AutomationProperties.Name="New question">
+                                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8F4;" FontFamily="Segoe Fluent Icons" FontSize="13" VerticalAlignment="Center" /><TextBlock Text="New question" Margin="8,0,0,0" /></StackPanel>
+                                    </Button>
+                                    <Button Click="QClose_Click" Style="{StaticResource QResponseActionButton}" Margin="10,0,0,0" ToolTip="Return to the normal Dynamic Island" AutomationProperties.Name="Quit Q">
+                                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8BB;" FontFamily="Segoe Fluent Icons" FontSize="13" VerticalAlignment="Center" /><TextBlock Text="Quit Q" Margin="8,0,0,0" /></StackPanel>
+                                    </Button>
+                                </StackPanel>
+                                <ScrollViewer Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
                                               Visibility="{Binding QHasShortcuts, Converter={StaticResource BoolToVisibility}}">
                                     <ItemsControl ItemsSource="{Binding QShortcuts}">
                                         <ItemsControl.ItemsPanel>
@@ -1018,14 +1104,6 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </ScrollViewer>
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Click="QNew_Click" Style="{StaticResource QActionButton}" ToolTip="Start a new question" AutomationProperties.Name="New question">
-                                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8F4;" FontFamily="Segoe Fluent Icons" FontSize="13" VerticalAlignment="Center" /><TextBlock Text="New question" Margin="8,0,0,0" /></StackPanel>
-                                    </Button>
-                                    <Button Click="QClose_Click" Style="{StaticResource QResponseActionButton}" Margin="10,0,0,0" ToolTip="Return to the normal Dynamic Island" AutomationProperties.Name="Quit Q">
-                                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8BB;" FontFamily="Segoe Fluent Icons" FontSize="13" VerticalAlignment="Center" /><TextBlock Text="Quit Q" Margin="8,0,0,0" /></StackPanel>
-                                    </Button>
-                                </StackPanel>
                             </Grid>
 
                             <Grid Grid.Row="3">

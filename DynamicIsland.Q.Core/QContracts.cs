@@ -76,7 +76,7 @@ public abstract record QStreamEvent
 public interface IQProvider
 {
     QProviderInfo Info { get; }
-    Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken);
+    Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken, string? baseUrl = null);
     IAsyncEnumerable<QStreamEvent> StreamAsync(
         QRequest request,
         string? credential,

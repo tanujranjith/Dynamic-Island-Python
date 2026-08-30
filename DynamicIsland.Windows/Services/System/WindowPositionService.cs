@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Interop;
+using DynamicIsland.Windows.Infrastructure;
 using DynamicIsland.Windows.Interop;
 using DynamicIsland.Windows.Models;
 using Forms = System.Windows.Forms;
@@ -77,10 +78,14 @@ public sealed class WindowPositionService
         if (handle == nint.Zero) return;
         var screen = SelectScreen(settings);
         var dpi = Math.Max(96u, NativeMethods.GetDpiForWindow(handle));
-        var width = (int)Math.Round(window.ActualWidth * dpi / 96d);
-        var height = (int)Math.Round(window.ActualHeight * dpi / 96d);
-        if (width <= 0) width = (int)Math.Round(window.Width * dpi / 96d);
-        if (height <= 0) height = (int)Math.Round(window.Height * dpi / 96d);
+        // ApplyLayout updates Width/Height immediately before this call. ActualWidth/ActualHeight
+        // still describe the previous layout pass at that point; using them here resizes the HWND
+        // back to its stale height and clips newly-added rows such as the AirPods card. Prefer the
+        // explicit requested dimensions and use Actual only for SizeToContent/Auto windows.
+        var widthDip = WindowSizingPolicy.EffectiveDimension(window.Width, window.ActualWidth);
+        var heightDip = WindowSizingPolicy.EffectiveDimension(window.Height, window.ActualHeight);
+        var width = (int)Math.Round(widthDip * dpi / 96d);
+        var height = (int)Math.Round(heightDip * dpi / 96d);
 
         int x;
         int y;

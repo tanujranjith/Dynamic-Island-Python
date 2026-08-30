@@ -54,6 +54,8 @@ public partial class App : System.Windows.Application
     private ScreenContextService? _qScreen;
     private SpeechInputService? _qSpeech;
     private DpapiSecretStore? _qSecrets;
+    private CodexAppServerClient? _codexClient;
+    private CodexAccountCoordinator? _codexAccount;
     private IQSessionController? _qSession;
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -129,9 +131,12 @@ public partial class App : System.Windows.Application
         _qScreen = new ScreenContextService(_log);
         _qSpeech = new SpeechInputService(_log);
         _qSecrets = new DpapiSecretStore(_log);
+        _codexClient = new CodexAppServerClient("1.0.6", log: _log);
+        _codexAccount = new CodexAccountCoordinator(_codexClient, _log);
         var providers = new QProviderRegistry([
             new OpenAiQProvider(), new AnthropicQProvider(), new GeminiQProvider(), new GroqQProvider(),
-            new XaiQProvider(), new OpenRouterQProvider(), new DeepSeekQProvider(), new OllamaQProvider()
+            new XaiQProvider(), new OpenRouterQProvider(), new DeepSeekQProvider(), new OllamaQProvider(),
+            new CodexQProvider(_codexClient)
         ]);
         _qSession = new QSessionController(providers);
         _vision.Changed += (_, state) => Dispatcher.BeginInvoke(() => HandleVisionAutomations(state));
@@ -140,7 +145,7 @@ public partial class App : System.Windows.Application
         _position = new WindowPositionService();
         _islandViewModel = new IslandViewModel(_settings, _media, _audio, _battery, _clock, _timerAlarm, _theme,
             _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy, _notificationHistory,
-            _qSession, _qScreen, _qSpeech, _qSecrets, _airPods);
+            _qSession, _qScreen, _qSpeech, _qSecrets, _codexAccount, _airPods);
         _timerViewModel = new TimerAlarmViewModel(_timerAlarm, _settings.Use24HourClock);
         _islandWindow = new IslandWindow(_islandViewModel, _timerViewModel, _position, _settingsService, _log, _qScreen);
         _islandWindow.OpenSettingsRequested += (_, _) => ShowSettings();
@@ -150,7 +155,7 @@ public partial class App : System.Windows.Application
         _islandWindow.Closed += (_, _) => { if (!_isShuttingDown) ShutdownApplication(); };
 
         _settingsViewModel = new SettingsViewModel(_settings, _settingsService, _startupService,
-            _vision, _visionModels, ApplySettings, Recenter, () => _settingsWindow?.Hide(), _qSecrets, providers);
+            _vision, _visionModels, ApplySettings, Recenter, () => _settingsWindow?.Hide(), _qSecrets, providers, _codexAccount);
         _settingsViewModel.OpenVisionPage = ShowVisionSettings;
         _media.AvailableAppsChanged += (_, apps) => Dispatcher.BeginInvoke(() =>
             _settingsViewModel.SetAvailableApps(apps));
@@ -161,6 +166,7 @@ public partial class App : System.Windows.Application
             _tray.ShowNotification(args.Title, args.Message));
 
         _islandWindow.Show();
+        _ = _codexAccount.RefreshAsync();
         _hotkeys = new GlobalHotkeyService(_log);
         _hotkeys.Attach(_islandWindow);
         _hotkeys.Register("Expand/collapse", Interop.NativeMethods.HotkeyModifierControl | Interop.NativeMethods.HotkeyModifierAlt, 0x20,
@@ -467,6 +473,7 @@ public partial class App : System.Windows.Application
         _settingsWindow?.Close();
         _islandViewModel?.Dispose();
         _qSession?.Dispose();
+        _codexClient?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _qSpeech?.Dispose();
         _vision?.Dispose();
         _weather?.Dispose();

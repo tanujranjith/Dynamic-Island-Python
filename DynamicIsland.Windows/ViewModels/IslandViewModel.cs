@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
@@ -9,6 +10,7 @@ using System.Windows.Threading;
 using DynamicIsland.Windows.Infrastructure;
 using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
+using DynamicIsland.Windows.Services.Q;
 using DynamicIsland.Q.Core;
 using MediaBrush = System.Windows.Media.Brush;
 
@@ -82,6 +84,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private readonly IQScreenContextService _qScreen;
     private readonly IQSpeechInputService _qSpeech;
     private readonly Services.Q.IQSecretStore _qSecrets;
+    private readonly CodexAccountCoordinator? _codexAccount;
+    private IReadOnlyList<CodexModel> _codexModels = [];
     private QSessionSnapshot _qSnapshot = new(QRunState.Idle, QMode.Ask, string.Empty, string.Empty, "Ready", null, null, "", "");
     private nint _qTargetWindow;
 
@@ -94,7 +98,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         NotificationListenerService notificationService, PrivacySensorService privacyService,
         NotificationHistoryService notificationHistoryService,
         IQSessionController qSession, IQScreenContextService qScreen, IQSpeechInputService qSpeech,
-        Services.Q.IQSecretStore qSecrets, AirPodsService? airPodsService = null)
+        Services.Q.IQSecretStore qSecrets, CodexAccountCoordinator? codexAccount = null, AirPodsService? airPodsService = null)
     {
         Settings = settings;
         _mediaService = mediaService;
@@ -116,6 +120,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _qScreen = qScreen;
         _qSpeech = qSpeech;
         _qSecrets = qSecrets;
+        _codexAccount = codexAccount;
+        if (_codexAccount is not null)
+        {
+            _codexModels = _codexAccount.Snapshot.Models ?? [];
+            _codexAccount.Changed += OnCodexAccountChanged;
+        }
         _airPodsService = airPodsService;
         if (_airPodsService != null)
         {
@@ -136,6 +146,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
                 _audioService.SetMasterVolume(Audio.MasterVolumePercent + amount);
         });
         ToggleExpandedCommand = new RelayCommand(() => IsExpanded = !IsExpanded);
+        RefreshCodexAccountCommand = new RelayCommand(() => _ = _codexAccount?.RefreshAsync());
+        CodexPrimaryActionCommand = new RelayCommand(() => _ = CodexPrimaryActionAsync());
+        SignOutCodexCommand = new RelayCommand(() => _ = SignOutCodexAsync());
 
         _mediaService.Changed += OnMediaChanged;
         _audioService.Changed += OnAudioChanged;
@@ -251,12 +264,75 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public IReadOnlyList<QShortcut> QShortcuts => Settings.QShortcuts ?? [];
     public bool QHasShortcuts => QShortcuts.Count > 0;
     public string QSelectedProvider => Settings.QSelectedProvider;
+    public string QSelectedModel
+    {
+        get => Settings.QSelectedModel;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value) || string.Equals(Settings.QSelectedModel, value, StringComparison.Ordinal)) return;
+            Settings.QSelectedModel = value.Trim();
+            NormalizeProviderReasoningEffort();
+            RaisePropertyChanged();
+            _ = PersistSettingsAsync();
+            RaiseQProperties();
+        }
+    }
+    public IReadOnlyList<string> QModelOptions => IsCodexSelected && _codexModels.Count > 0
+        ? _codexModels.Select(model => model.Id).ToArray()
+        : QProviderPolicy.ModelSuggestions(Settings.QSelectedProvider, Settings.QSelectedModel);
+    public string QReasoningEffort
+    {
+        get => Settings.QReasoningEffort;
+        set
+        {
+            var effort = string.IsNullOrWhiteSpace(value) ? "auto" : value.Trim().ToLowerInvariant();
+            if (string.Equals(Settings.QReasoningEffort, effort, StringComparison.OrdinalIgnoreCase)) return;
+            Settings.QReasoningEffort = effort;
+            NormalizeProviderReasoningEffort();
+            RaisePropertyChanged();
+            _ = PersistSettingsAsync();
+        }
+    }
+    public IReadOnlyList<string> QReasoningEffortOptions => IsCodexSelected
+        ? CodexModelSelectionPolicy.EffortOptions(SelectedCodexModel)
+        : QProviderPolicy.EffortOptions(Settings.QSelectedProvider, Settings.QSelectedModel);
+    public bool QIsCodexSelected => string.Equals(Settings.QSelectedProvider, "codex", StringComparison.OrdinalIgnoreCase);
+    private bool IsCodexSelected => QIsCodexSelected;
+    private CodexModel? SelectedCodexModel => _codexModels.FirstOrDefault(model =>
+        string.Equals(model.Id, Settings.QSelectedModel, StringComparison.OrdinalIgnoreCase));
+    public bool QCodexIsConnected => _codexAccount?.Snapshot.IsConnected == true;
+    public bool QShowCodexSignOut => QIsCodexSelected && QCodexIsConnected;
+    public string QCodexChipText => _codexAccount?.Snapshot switch
+    {
+        { State: CodexAccountState.Connected, UsedPercent: int used } => $"ChatGPT · {used}% used",
+        { State: CodexAccountState.Connected } => "ChatGPT connected",
+        { State: CodexAccountState.LimitReached } => "Codex limit reached",
+        { State: CodexAccountState.LoginPending, PendingLogin: { } login } => $"Code {login.UserCode}",
+        { State: CodexAccountState.Checking } => "Checking Codex…",
+        { State: CodexAccountState.RuntimeUnavailable } => "Codex unavailable",
+        { State: CodexAccountState.Error } => "Codex needs attention",
+        _ => "Sign in to ChatGPT"
+    };
+    public string QCodexAccountDetails
+    {
+        get
+        {
+            var snapshot = _codexAccount?.Snapshot;
+            if (snapshot is null) return "Codex account status is unavailable.";
+            if (!string.IsNullOrWhiteSpace(snapshot.Error)) return snapshot.Error;
+            var plan = snapshot.Account?.PlanType ?? "ChatGPT plan";
+            var reset = snapshot.RateLimit?.ResetsAt is { } at ? $" · resets {at.LocalDateTime:g}" : string.Empty;
+            var runtime = snapshot.Runtime is { } info ? $" · Codex {info.Version ?? "unknown"} ({info.Source})" : string.Empty;
+            return $"{plan}{reset}{runtime}";
+        }
+    }
     public bool ShowCompactMediaContent => ShowMedia && !IsQActive;
     public bool ShowCompactQContent => IsQActive;
 
     private static string CleanQResponseText(string response)
     {
         if (string.IsNullOrWhiteSpace(response)) return string.Empty;
+        response = TextEncodingRepair.RepairUtf8ReadAsWindows1252(response);
         var cleaned = response.Replace("```", string.Empty, StringComparison.Ordinal)
             .Replace("**", string.Empty, StringComparison.Ordinal)
             .Replace("__", string.Empty, StringComparison.Ordinal)
@@ -870,6 +946,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public ICommand ToggleMuteCommand { get; }
     public ICommand AdjustVolumeCommand { get; }
     public ICommand ToggleExpandedCommand { get; }
+    public ICommand RefreshCodexAccountCommand { get; }
+    public ICommand CodexPrimaryActionCommand { get; }
+    public ICommand SignOutCodexCommand { get; }
     public ICommand SeekCommand { get; private set; } = null!;
     public ICommand OpenMediaAppCommand { get; private set; } = null!;
     public ICommand LaunchCommand { get; private set; } = null!;
@@ -925,6 +1004,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         });
         try
         {
+            await RefreshCodexModelsAsync().ConfigureAwait(false);
             var context = await _qScreen.CaptureAsync(_qTargetWindow, Settings.QCaptureMode == Models.QCaptureMode.ActiveMonitor ? DynamicIsland.Q.Core.QCaptureMode.ActiveMonitor : DynamicIsland.Q.Core.QCaptureMode.ActiveWindow, CancellationToken.None).ConfigureAwait(false);
             await _qSession.BeginAsync(DynamicIsland.Q.Core.QMode.Ask, Settings.QSelectedProvider, Settings.QSelectedModel, context).ConfigureAwait(false);
 
@@ -949,12 +1029,15 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             OnUi(() => RaiseQProperties());
             return;
         }
+        await RefreshCodexModelsAsync().ConfigureAwait(false);
         var baseUrl = string.Equals(Settings.QSelectedProvider, "ollama", StringComparison.OrdinalIgnoreCase) ? Settings.QOllamaBaseUrl : null;
         var credential = _qSecrets.Get(Settings.QSelectedProvider);
         var customSystemPrompt = _qSnapshot.Mode == QMode.Say ? Settings.QSaySystemPrompt : Settings.QAskSystemPrompt;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(Settings.QTimeoutSeconds));
         await _qSession.SubmitAsync(prompt, _qSnapshot.Mode, Settings.QSelectedProvider, Settings.QSelectedModel, credential, baseUrl,
             Settings.QIncludeScreenImage,
             token => _qScreen.CaptureAsync(_qTargetWindow, Settings.QCaptureMode == Models.QCaptureMode.ActiveMonitor ? DynamicIsland.Q.Core.QCaptureMode.ActiveMonitor : DynamicIsland.Q.Core.QCaptureMode.ActiveWindow, token),
+            cancellationToken: timeout.Token,
             maxResponseTokens: Settings.QMaxResponseTokens,
             customSystemPrompt: customSystemPrompt,
             reasoningEffort: Settings.QReasoningEffort).ConfigureAwait(false);
@@ -990,13 +1073,83 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public void ClearQ() { _qSession.Clear(); IsExpanded = false; }
     public void CopyQResponse() { if (!string.IsNullOrWhiteSpace(QResponse)) System.Windows.Clipboard.SetText(QResponse); }
 
+    private async Task RefreshCodexModelsAsync()
+    {
+        if (!IsCodexSelected || _codexAccount is null || _codexModels.Count > 0) return;
+        try
+        {
+            await _codexAccount.RefreshAsync(CancellationToken.None).ConfigureAwait(false);
+            var models = _codexAccount.Snapshot.Models ?? [];
+            if (models.Count == 0) return;
+            await OnUiAsync(() =>
+            {
+                _codexModels = models;
+                var changed = false;
+                if (SelectedCodexModel is null)
+                {
+                    Settings.QSelectedModel = models.FirstOrDefault(model => model.IsDefault)?.Id ?? models[0].Id;
+                    changed = true;
+                }
+                changed |= NormalizeProviderReasoningEffort();
+                RaiseMany(nameof(QSelectedModel), nameof(QModelOptions), nameof(QReasoningEffort), nameof(QReasoningEffortOptions));
+                if (changed) _ = PersistSettingsAsync();
+            }).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Submission surfaces the concrete app-server/account error. Keep fallback
+            // selectors available if discovery is temporarily unavailable.
+        }
+    }
+
+    private async Task CodexPrimaryActionAsync()
+    {
+        if (_codexAccount is null) return;
+        if (_codexAccount.Snapshot.IsConnected) { await _codexAccount.RefreshAsync().ConfigureAwait(false); return; }
+        try
+        {
+            var login = await _codexAccount.StartLoginAsync().ConfigureAwait(false);
+            Process.Start(new ProcessStartInfo { FileName = login.VerificationUrl, UseShellExecute = true });
+            await _codexAccount.CompleteLoginAsync(login).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { }
+        catch { await _codexAccount.RefreshAsync().ConfigureAwait(false); }
+    }
+
+    private async Task SignOutCodexAsync()
+    {
+        if (_codexAccount?.Snapshot.IsConnected != true) return;
+        var choice = System.Windows.MessageBox.Show(
+            "Signing out here also signs out official Codex apps using this Windows profile. Continue?",
+            "Sign out of ChatGPT / Codex", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (choice == System.Windows.MessageBoxResult.Yes) await _codexAccount.LogoutAsync().ConfigureAwait(false);
+    }
+
+    private void OnCodexAccountChanged(CodexAccountSnapshot snapshot) => OnUi(() =>
+    {
+        _codexModels = snapshot.Models ?? _codexModels;
+        NormalizeProviderReasoningEffort();
+        RaiseMany(nameof(QCodexIsConnected), nameof(QShowCodexSignOut), nameof(QCodexChipText), nameof(QCodexAccountDetails),
+            nameof(QModelOptions), nameof(QSelectedModel), nameof(QReasoningEffortOptions), nameof(QReasoningEffort));
+    });
+
+    private bool NormalizeProviderReasoningEffort()
+    {
+        var normalized = IsCodexSelected
+            ? CodexModelSelectionPolicy.NormalizeEffort(SelectedCodexModel, Settings.QReasoningEffort)
+            : QProviderPolicy.NormalizeEffort(Settings.QSelectedProvider, Settings.QSelectedModel, Settings.QReasoningEffort);
+        if (string.Equals(normalized, Settings.QReasoningEffort, StringComparison.OrdinalIgnoreCase)) return false;
+        Settings.QReasoningEffort = normalized;
+        return true;
+    }
+
     private void OnQChanged(QSessionSnapshot snapshot) => OnUi(() =>
     {
         _qSnapshot = snapshot;
         RaiseQProperties();
     });
 
-    private void RaiseQProperties() => RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QHeaderStatusText), nameof(QResponse), nameof(QResponseDisplay), nameof(QPromptText), nameof(QPromptDisplay), nameof(QHasPrompt), nameof(QInlineStatusText), nameof(QShowInlineThinking), nameof(QCanStop), nameof(QCanCopyResponse), nameof(QCanRetry), nameof(QShowResponseActions), nameof(QError), nameof(QShortcuts), nameof(QHasShortcuts),
+    private void RaiseQProperties() => RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QHeaderStatusText), nameof(QResponse), nameof(QResponseDisplay), nameof(QPromptText), nameof(QPromptDisplay), nameof(QHasPrompt), nameof(QInlineStatusText), nameof(QShowInlineThinking), nameof(QCanStop), nameof(QCanCopyResponse), nameof(QCanRetry), nameof(QShowResponseActions), nameof(QError), nameof(QShortcuts), nameof(QHasShortcuts), nameof(QSelectedModel), nameof(QModelOptions), nameof(QReasoningEffort), nameof(QReasoningEffortOptions), nameof(QIsCodexSelected), nameof(QCodexIsConnected), nameof(QShowCodexSignOut), nameof(QCodexChipText), nameof(QCodexAccountDetails),
         nameof(QSourceText), nameof(QCompactText), nameof(IsQActive), nameof(ShowQSurface), nameof(QIsAsk), nameof(QIsSay), nameof(QIsListening),
         nameof(QNeedsConsent), nameof(QSpeechAvailable), nameof(QSelectedProvider), nameof(ShowCompactMediaContent), nameof(ShowCompactQContent),
         nameof(PrimaryActivity), nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText), nameof(ShowCompactArt),
@@ -1380,17 +1533,13 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     private bool ShouldTriggerAirPodsBanner(AirPodsState previous, AirPodsState next)
     {
-        if (!next.IsConnected || !next.IsAvailable) return false;
+        if (!AirPodsConnectionPolicy.IsNewConnection(previous, next)) return false;
         if (FocusModeEnabled) return false;
         // Lower priority than urgent activities
         if (PrimaryActivity is IslandActivity.Alarm or IslandActivity.Timer or IslandActivity.Q) return false;
-
-        if (!previous.IsConnected && next.IsConnected) return true;
-        if (previous.CaseLidOpen != next.CaseLidOpen && next.CaseLidOpen && next.BothInCase) return true;
-        if (previous.LeftCharging != next.LeftCharging || previous.RightCharging != next.RightCharging || previous.CaseCharging != next.CaseCharging) return true;
-        // Battery/model metadata often arrives after the Windows connection event. It updates the
-        // visible card, but must not replay the connection banner as a second animation.
-        return false;
+        // Battery, charging and case metadata can fluctuate between continuity packets.
+        // They update the visible card but never replay the connection banner.
+        return true;
     }
 
     private void TriggerAirPodsBanner()
@@ -1609,6 +1758,17 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         if (dispatcher.CheckAccess()) action(); else dispatcher.BeginInvoke(action);
     }
 
+    private static Task OnUiAsync(Action action)
+    {
+        var app = System.Windows.Application.Current;
+        if (app is null || app.Dispatcher.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+        return app.Dispatcher.InvokeAsync(action).Task;
+    }
+
     public void Dispose()
     {
         _mediaService.Changed -= OnMediaChanged;
@@ -1632,6 +1792,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _timerAlarmService.Changed -= OnTimerAlarmChanged;
         _themeService.SystemThemeChanged -= OnSystemThemeChanged;
         _qSession.Changed -= OnQChanged;
+        if (_codexAccount is not null) _codexAccount.Changed -= OnCodexAccountChanged;
         _qSession.Clear();
         if (_airPodsService != null) _airPodsService.Changed -= OnAirPodsChanged;
     }

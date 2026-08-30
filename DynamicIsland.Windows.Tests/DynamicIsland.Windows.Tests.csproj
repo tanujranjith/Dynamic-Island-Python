@@ -23,8 +23,19 @@
     <Compile Include="..\DynamicIsland.Windows\Models\RecurrenceRule.cs" Link="RecurrenceRule.cs" />
     <Compile Include="..\DynamicIsland.Windows\Infrastructure\ViewModelNotificationGroups.cs" Link="ViewModelNotificationGroups.cs" />
     <Compile Include="..\DynamicIsland.Windows\Infrastructure\MediaPresentation.cs" Link="MediaPresentation.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Infrastructure\TextEncodingRepair.cs" Link="TextEncodingRepair.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Infrastructure\WindowSizingPolicy.cs" Link="WindowSizingPolicy.cs" />
     <Compile Include="..\DynamicIsland.Windows\Models\MediaInfo.cs" Link="MediaInfo.cs" />
     <Compile Include="..\DynamicIsland.Windows\Models\AirPodsState.cs" Link="AirPodsState.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Models\AirPodsConnectionPolicy.cs" Link="AirPodsConnectionPolicy.cs" />
     <Compile Include="..\DynamicIsland.Windows\Services\System\AirPodsParser.cs" Link="AirPodsParser.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\Q\CodexTurnStartRequest.cs" Link="CodexTurnStartRequest.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\Q\CodexModels.cs" Link="CodexModels.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\Q\CodexModelCatalogParser.cs" Link="CodexModelCatalogParser.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\Q\CodexModelSelectionPolicy.cs" Link="CodexModelSelectionPolicy.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\Q\CodexTurnNotificationAccumulator.cs" Link="CodexTurnNotificationAccumulator.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\Q\CodexErrors.cs" Link="CodexErrors.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\Q\CodexRuntimeResolver.cs" Link="CodexRuntimeResolver.cs" />
+    <Compile Include="..\DynamicIsland.Windows\Services\Q\CodexThreadLedger.cs" Link="CodexThreadLedger.cs" />
   </ItemGroup>
 </Project>

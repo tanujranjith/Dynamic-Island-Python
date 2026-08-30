@@ -79,7 +79,7 @@ public sealed class QCoreTests
         public bool ReturnEmpty { get; set; }
         public QRequest? LastRequest { get; private set; }
         public QProviderInfo Info { get; } = new("fake", "Fake", QProviderCapabilities.Text | QProviderCapabilities.Streaming, "demo");
-        public Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<QModelInfo>> GetModelsAsync(string? credential, CancellationToken cancellationToken, string? baseUrl = null) =>
             Task.FromResult<IReadOnlyList<QModelInfo>>([new QModelInfo("demo", "Demo", Info.Capabilities, true)]);
 
         public async IAsyncEnumerable<QStreamEvent> StreamAsync(QRequest request, string? credential, string? baseUrl,

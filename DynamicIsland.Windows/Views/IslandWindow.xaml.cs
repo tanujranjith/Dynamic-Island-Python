@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using DynamicIsland.Windows.Infrastructure;
 using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
 using DynamicIsland.Windows.ViewModels;
@@ -190,7 +191,10 @@ public partial class IslandWindow : Window
             if (_suppressExpandedAnimation) return;
             if (_timerPanelOpen) _timerPanelOpen = false;
             _position.ApplyWindowStyles(this, _viewModel.Settings, _viewModel.IsCompact);
-            AnimatePill(animate: true);
+            // Dynamic rows (AirPods, timers, quotes) can appear while the island is compact.
+            // Recompute the host HWND before expanding; animating only the inner shell leaves the
+            // transparent window at its old compact-state height and clips the bottom of the pill.
+            ApplyLayout(animate: true);
         }
         else if (e.PropertyName == nameof(IslandViewModel.IsStatsStyle) || e.PropertyName == nameof(IslandViewModel.IsAppleStyle))
         {
@@ -238,7 +242,9 @@ public partial class IslandWindow : Window
             _lastShowAirPodsCard = showAirPodsCard;
             if (_timerPanelOpen) return;
             ApplyVisualMode();
-            if (_viewModel.IsExpanded) ApplyLayout(animate: true);
+            // Keep the transparent host ready even when the card connects while compact. The next
+            // expansion must not inherit the smaller host height that was calculated at startup.
+            ApplyLayout(animate: _viewModel.IsExpanded);
         }
         else if (e.PropertyName == nameof(IslandViewModel.IsAirPodsBannerActive))
         {
@@ -379,7 +385,9 @@ public partial class IslandWindow : Window
         var timerSpace = _liveTimerVisible ? LiveTimerExtraHeight : 0d;
         var statsSpace = _viewModel.IsStatsStyle ? StatsDashboardExtraHeight : 0d;
         var qSpace = _viewModel.ShowQSurface ? QSurfaceExtraHeight : 0d;
-        var airPodsSpace = _viewModel.ShowAirPods ? 70d : 0d;
+        // The card contains three text lines and scales with the user's interface setting.
+        // Reserve its full minimum height, top margin, and a little breathing room.
+        var airPodsSpace = _viewModel.ShowAirPods ? 76d : 0d;
         // Compact dimensions are user-controlled and deliberately independent from the expanded
         // canvas.  Previously this method ignored IslandWidth/IslandHeight and used a preset for
         // both states, so adjusting the mini island could distort the expanded layout.
@@ -404,7 +412,6 @@ public partial class IslandWindow : Window
     private (double W, double H) ExpandedPillSize()
     {
         var m = Metrics();
-        if (!_viewModel.Settings.AutoGrowPill) return (m.eW, m.eH);
         // Q has a fixed interaction frame. Letting the answer text determine the whole pill height
         // pushes the composer and footer below the shell after a long response. The response card
         // owns a ScrollViewer, so keep the prompt/actions/footer pinned in the reserved Q height.
@@ -418,8 +425,13 @@ public partial class IslandWindow : Window
             var content = _viewModel.ShowQSurface ? QContent : ExpandedContent;
             content.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
             var d = content.DesiredSize;
-            var w = Math.Clamp(d.Width + 2, m.eW, CanvasW - 24);
-            var h = Math.Clamp(d.Height + 2, m.eH, Math.Max(m.eH, m.winH - 24));
+            // Auto-grow off keeps the configured width, but it must never suppress mandatory
+            // vertical growth. Dynamic rows (AirPods, timer, quotes) can otherwise be arranged
+            // below the fixed shell and get cut in half even though the host window is tall enough.
+            var w = _viewModel.Settings.AutoGrowPill
+                ? Math.Clamp(d.Width + 2, m.eW, CanvasW - 24)
+                : m.eW;
+            var h = WindowSizingPolicy.AntiClippingDimension(m.eH, d.Height + 2, m.winH - 12);
             return (w, h);
         }
         catch { return (m.eW, m.eH); }
@@ -543,6 +555,10 @@ public partial class IslandWindow : Window
     {
         var generation = ++_pillAnimationGeneration;
         var m = Metrics();
+        // Make the destination surface measurable before computing its safe expanded bounds.
+        // A Collapsed WPF element reports no desired size, which previously defeated the
+        // anti-clipping calculation on the first expansion.
+        ApplyVisualMode();
         var (eW, eH) = ExpandedPillSize();
         var targetW = _timerPanelOpen ? TimerPanelWidth : _viewModel.IsExpanded ? eW : m.cW;
         var targetH = _timerPanelOpen ? TimerPanelHeight : _viewModel.IsExpanded ? eH : m.cH;
@@ -551,7 +567,6 @@ public partial class IslandWindow : Window
         PillScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
         PillScale.ScaleX = PillScale.ScaleY = 1d;
         var expanded = _viewModel.IsExpanded || _timerPanelOpen;
-        ApplyVisualMode();
         var compactContent = ActiveCompactContent;
         var expandedContent = ActiveExpandedContent;
 
@@ -624,6 +639,31 @@ public partial class IslandWindow : Window
             _log.Info($"Real island animation completed: expanded={expanded}, final={GlassShell.ActualWidth:0.#}x{GlassShell.ActualHeight:0.#}");
         }
         if (_viewModel.IsExpanded && !_timerPanelOpen) UpdateAutoGrow();
+        LogAirPodsLayoutSnapshot();
+    }
+
+    private void LogAirPodsLayoutSnapshot()
+    {
+        if (!_viewModel.IsExpanded || !_viewModel.ShowAirPodsCard) return;
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                var cardOrigin = AirPodsCard.TranslatePoint(new System.Windows.Point(0, 0), GlassShell);
+                var cardBottom = cardOrigin.Y + AirPodsCard.ActualHeight;
+                _log.Info(
+                    $"AirPods layout: window={ActualWidth:0.#}x{ActualHeight:0.#}, " +
+                    $"shell={GlassShell.ActualWidth:0.#}x{GlassShell.ActualHeight:0.#}, " +
+                    $"contentDesired={ExpandedContent.DesiredSize.Width:0.#}x{ExpandedContent.DesiredSize.Height:0.#}, " +
+                    $"contentActual={ExpandedContent.ActualWidth:0.#}x{ExpandedContent.ActualHeight:0.#}, " +
+                    $"cardY={cardOrigin.Y:0.#}, cardHeight={AirPodsCard.ActualHeight:0.#}, cardBottom={cardBottom:0.#}");
+            }
+            catch (InvalidOperationException)
+            {
+                // The visual may be detached if the user collapses the island during this render pass.
+            }
+        }, DispatcherPriority.Render);
     }
 
     private void Pill_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)

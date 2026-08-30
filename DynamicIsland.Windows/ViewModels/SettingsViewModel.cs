@@ -24,6 +24,9 @@ public sealed class SettingsViewModel : ObservableObject
     private readonly Action _close;
     private readonly IQSecretStore _qSecrets;
     private readonly IQProviderRegistry _qProviders;
+    private readonly CodexAccountCoordinator _codexAccount;
+    private IReadOnlyList<CodexModel> _codexModels = [];
+    private readonly Dictionary<string, IReadOnlyList<QModelInfo>> _providerModels = new(StringComparer.OrdinalIgnoreCase);
     private string _qConnectionStatus = "Not tested";
     private string _visionStatusLine = string.Empty;
     private bool _visionBusy;
@@ -38,7 +41,8 @@ public sealed class SettingsViewModel : ObservableObject
 
     public SettingsViewModel(AppSettings settings, SettingsService settingsService,
         StartupService startupService, VisionService vision, VisionModelManager visionModels,
-        Action apply, Action recenter, Action close, IQSecretStore qSecrets, IQProviderRegistry qProviders)
+        Action apply, Action recenter, Action close, IQSecretStore qSecrets, IQProviderRegistry qProviders,
+        CodexAccountCoordinator codexAccount)
     {
         _settings = settings;
         _settingsService = settingsService;
@@ -50,6 +54,9 @@ public sealed class SettingsViewModel : ObservableObject
         _close = close;
         _qSecrets = qSecrets;
         _qProviders = qProviders;
+        _codexAccount = codexAccount;
+        _codexModels = codexAccount.Snapshot.Models ?? [];
+        _codexAccount.Changed += OnCodexAccountChanged;
         SaveCommand = new RelayCommand(() => _ = SaveAsync());
         RecenterCommand = new RelayCommand(() => { _recenter(); _ = SaveAsync(false); });
         CloseCommand = new RelayCommand(() => { _ = SaveAsync(); _close(); });
@@ -72,6 +79,10 @@ public sealed class SettingsViewModel : ObservableObject
         MoveModuleDownCommand = new RelayCommand<ModuleItem>(m => MoveModule(m, +1));
         SelectSectionCommand = new RelayCommand<string>(k => { if (k is not null) SelectedSectionKey = k; });
         TestQCommand = new RelayCommand(() => _ = TestQAsync());
+        SignInCodexCommand = new RelayCommand(() => _ = SignInCodexAsync());
+        RefreshCodexCommand = new RelayCommand(() => _ = _codexAccount.RefreshAsync());
+        CancelCodexLoginCommand = new RelayCommand(_codexAccount.CancelLogin);
+        SignOutCodexCommand = new RelayCommand(() => _ = SignOutCodexAsync());
         ResetQPromptsCommand = new RelayCommand(ResetQPrompts);
         AddQShortcutCommand = new RelayCommand(AddQShortcut);
         RemoveQShortcutCommand = new RelayCommand<QShortcutItem>(RemoveQShortcut);
@@ -390,18 +401,64 @@ public sealed class SettingsViewModel : ObservableObject
     public string NotificationAppFilter { get => _settings.NotificationAppFilter; set { Set(v => _settings.NotificationAppFilter = v ?? "", value); _apply(); } }
     public bool ShowPrivacyIndicators { get => _settings.ShowPrivacyIndicators; set { Set(v => _settings.ShowPrivacyIndicators = v, value); _apply(); } }
     public bool QEnabled { get => _settings.QEnabled; set { Set(v => _settings.QEnabled = v, value); _apply(); } }
-    public string QSelectedProvider { get => _settings.QSelectedProvider; set { Set(v => _settings.QSelectedProvider = v ?? "openai", value); _apply(); } }
-    public string QSelectedModel { get => _settings.QSelectedModel; set { Set(v => _settings.QSelectedModel = v ?? "gpt-4o-mini", value); _apply(); } }
+    public string QSelectedProvider
+    {
+        get => _settings.QSelectedProvider;
+        set
+        {
+            var provider = value ?? "openai";
+            var changed = !string.Equals(_settings.QSelectedProvider, provider, StringComparison.OrdinalIgnoreCase);
+            Set(v => _settings.QSelectedProvider = v, provider);
+            if (changed && _qProviders.Find(provider) is { } selectedProvider)
+            {
+                _settings.QSelectedModel = selectedProvider.Info.DefaultModel;
+                RaisePropertyChanged(nameof(QSelectedModel));
+            }
+            NormalizeProviderEffort();
+            RaisePropertyChanged(nameof(QApiKey));
+            RaisePropertyChanged(nameof(QIsCodexSelected));
+            RaisePropertyChanged(nameof(QShowApiKey));
+            RaisePropertyChanged(nameof(QModelOptions));
+            RaisePropertyChanged(nameof(QReasoningEffortOptions));
+            _apply();
+        }
+    }
+    public string QSelectedModel
+    {
+        get => _settings.QSelectedModel;
+        set
+        {
+            Set(v => _settings.QSelectedModel = v ?? "gpt-4o-mini", value);
+            NormalizeProviderEffort();
+            RaisePropertyChanged(nameof(QReasoningEffortOptions));
+            _apply();
+        }
+    }
     public string QApiKey { get => _qSecrets.Get(_settings.QSelectedProvider) ?? ""; set { _qSecrets.Set(_settings.QSelectedProvider, value); RaisePropertyChanged(); } }
-    public Array QProviderOptions => new[] { "openai", "anthropic", "gemini", "groq", "xai", "openrouter", "deepseek", "ollama" };
+    public Array QProviderOptions => new[] { "openai", "codex", "anthropic", "gemini", "groq", "xai", "openrouter", "deepseek", "ollama" };
+    public bool QIsCodexSelected => string.Equals(_settings.QSelectedProvider, "codex", StringComparison.OrdinalIgnoreCase);
+    public bool QShowApiKey => !QIsCodexSelected && !string.Equals(_settings.QSelectedProvider, "ollama", StringComparison.OrdinalIgnoreCase);
+    private CodexModel? SelectedCodexModel => _codexModels.FirstOrDefault(model => string.Equals(model.Id, _settings.QSelectedModel, StringComparison.OrdinalIgnoreCase));
+    public IReadOnlyList<string> QModelOptions => QIsCodexSelected && _codexModels.Count > 0
+        ? _codexModels.Select(model => model.Id).ToArray()
+        : _providerModels.TryGetValue(_settings.QSelectedProvider, out var discovered) && discovered.Count > 0
+            ? new[] { _settings.QSelectedModel }.Concat(discovered.Select(model => model.Id))
+                .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()!
+            : QProviderPolicy.ModelSuggestions(_settings.QSelectedProvider, _settings.QSelectedModel);
     public Array QCaptureModeOptions => Enum.GetValues<Models.QCaptureMode>();
     public Models.QCaptureMode QCaptureMode { get => _settings.QCaptureMode; set { Set(v => _settings.QCaptureMode = v, value); _apply(); } }
     public bool QIncludeScreenImage { get => _settings.QIncludeScreenImage; set { Set(v => _settings.QIncludeScreenImage = v, value); _apply(); } }
-    public string QOllamaBaseUrl { get => _settings.QOllamaBaseUrl; set { Set(v => _settings.QOllamaBaseUrl = v ?? "http://localhost:11434/v1", value); _apply(); } }
+    public string QOllamaBaseUrl { get => _settings.QOllamaBaseUrl; set { Set(v => _settings.QOllamaBaseUrl = v ?? "http://localhost:11434", value); _apply(); } }
     public int QTimeoutSeconds { get => _settings.QTimeoutSeconds; set => SetSize(v => _settings.QTimeoutSeconds = v, value, 10, 300); }
     public int QMaxResponseTokens { get => _settings.QMaxResponseTokens; set => SetSize(v => _settings.QMaxResponseTokens = v, value, 2048, 32768); }
-    public string QReasoningEffort { get => _settings.QReasoningEffort; set { Set(v => _settings.QReasoningEffort = v ?? "auto", value); _apply(); } }
-    public IReadOnlyList<string> QReasoningEffortOptions => ["auto", "minimal", "low", "medium", "high"];
+    public string QReasoningEffort
+    {
+        get => _settings.QReasoningEffort;
+        set { Set(v => _settings.QReasoningEffort = v ?? "auto", value); NormalizeProviderEffort(); _apply(); }
+    }
+    public IReadOnlyList<string> QReasoningEffortOptions => QIsCodexSelected
+        ? CodexModelSelectionPolicy.EffortOptions(SelectedCodexModel)
+        : QProviderPolicy.EffortOptions(_settings.QSelectedProvider, _settings.QSelectedModel);
     public string QAskSystemPrompt { get => _settings.QAskSystemPrompt; set { Set(v => _settings.QAskSystemPrompt = v ?? "", value); _apply(); } }
     public string QSaySystemPrompt { get => _settings.QSaySystemPrompt; set { Set(v => _settings.QSaySystemPrompt = v ?? "", value); _apply(); } }
     public string QHotkeyShortcut
@@ -412,6 +469,34 @@ public sealed class SettingsViewModel : ObservableObject
     public IReadOnlyList<string> QHotkeyShortcutOptions => ["None", .. QShortcutList.Select(item => item.Name).Where(name => !string.IsNullOrWhiteSpace(name))];
     public string QConnectionStatus { get => _qConnectionStatus; private set => SetProperty(ref _qConnectionStatus, value); }
     public ICommand TestQCommand { get; }
+    public ICommand SignInCodexCommand { get; }
+    public ICommand RefreshCodexCommand { get; }
+    public ICommand CancelCodexLoginCommand { get; }
+    public ICommand SignOutCodexCommand { get; }
+    public bool QCodexIsConnected => _codexAccount.Snapshot.IsConnected;
+    public bool QCodexLoginPending => _codexAccount.Snapshot.State == CodexAccountState.LoginPending;
+    public string QCodexActionLabel => QCodexIsConnected ? "Refresh" : QCodexLoginPending ? "Open sign-in" : "Sign in with ChatGPT";
+    public string QCodexAccountStatus => _codexAccount.Snapshot switch
+    {
+        { State: CodexAccountState.Connected, Account: { } account } => $"{account.Email ?? "ChatGPT account"} · {account.PlanType ?? "plan unavailable"}",
+        { State: CodexAccountState.LimitReached, Account: { } account } => $"{account.Email ?? "ChatGPT account"} · usage limit reached",
+        { State: CodexAccountState.LoginPending, PendingLogin: { } login } => $"Enter code {login.UserCode} at {login.VerificationUrl}",
+        { State: CodexAccountState.Checking } => "Checking account…",
+        { State: CodexAccountState.RuntimeUnavailable, Error: { } error } => error,
+        { State: CodexAccountState.Error, Error: { } error } => error,
+        _ => "Not signed in"
+    };
+    public string QCodexUsageStatus
+    {
+        get
+        {
+            var snapshot = _codexAccount.Snapshot;
+            var usage = snapshot.UsedPercent is int used ? $"{used}% used" : "Usage unavailable";
+            var reset = snapshot.RateLimit?.ResetsAt is { } at ? $" · resets {at.LocalDateTime:g}" : string.Empty;
+            var runtime = snapshot.Runtime is { } info ? $" · Codex {info.Version ?? "unknown"} ({info.Source})" : string.Empty;
+            return usage + reset + runtime;
+        }
+    }
     public ICommand ResetQPromptsCommand { get; }
     public ObservableCollection<QShortcutItem> QShortcutList { get; } = [];
     public ICommand AddQShortcutCommand { get; }
@@ -473,6 +558,15 @@ public sealed class SettingsViewModel : ObservableObject
     {
         var provider = _qProviders.Find(_settings.QSelectedProvider);
         if (provider is null) { QConnectionStatus = "Provider unavailable"; return; }
+        if (string.Equals(_settings.QSelectedProvider, "codex", StringComparison.OrdinalIgnoreCase))
+        {
+            await _codexAccount.RefreshAsync().ConfigureAwait(false);
+            var snapshot = _codexAccount.Snapshot;
+            QConnectionStatus = snapshot.IsConnected
+                ? $"Connected · {(snapshot.Models?.Count ?? 0)} Codex models available" + (snapshot.UsedPercent is int used ? $" · {used}% used" : "")
+                : snapshot.Error ?? "Sign in with ChatGPT/Codex first";
+            return;
+        }
         if (!string.Equals(_settings.QSelectedProvider, "ollama", StringComparison.OrdinalIgnoreCase)
             && string.IsNullOrWhiteSpace(_qSecrets.Get(_settings.QSelectedProvider)))
         {
@@ -481,10 +575,66 @@ public sealed class SettingsViewModel : ObservableObject
         }
         try
         {
-            var models = await provider.GetModelsAsync(_qSecrets.Get(_settings.QSelectedProvider), CancellationToken.None);
+            var baseUrl = string.Equals(_settings.QSelectedProvider, "ollama", StringComparison.OrdinalIgnoreCase)
+                ? _settings.QOllamaBaseUrl : null;
+            var models = await provider.GetModelsAsync(_qSecrets.Get(_settings.QSelectedProvider), CancellationToken.None, baseUrl);
+            _providerModels[_settings.QSelectedProvider] = models;
+            RaisePropertyChanged(nameof(QModelOptions));
             QConnectionStatus = $"Connected · {models.Count} model{(models.Count == 1 ? "" : "s")} available";
         }
         catch (Exception ex) { QConnectionStatus = ex.Message.Length > 120 ? ex.Message[..120] : ex.Message; }
+    }
+
+    private async Task SignInCodexAsync()
+    {
+        try
+        {
+            if (_codexAccount.Snapshot.IsConnected) { await _codexAccount.RefreshAsync().ConfigureAwait(false); return; }
+            QConnectionStatus = "Starting ChatGPT sign-in…";
+            var login = _codexAccount.Snapshot.PendingLogin ?? await _codexAccount.StartLoginAsync(CancellationToken.None).ConfigureAwait(false);
+            Process.Start(new ProcessStartInfo { FileName = login.VerificationUrl, UseShellExecute = true });
+            QConnectionStatus = "Waiting for ChatGPT sign-in…";
+            await _codexAccount.CompleteLoginAsync(login).ConfigureAwait(false);
+            QConnectionStatus = "ChatGPT/Codex connected";
+        }
+        catch (OperationCanceledException) { QConnectionStatus = "ChatGPT sign-in cancelled"; }
+        catch (Exception ex) { QConnectionStatus = ex.Message.Length > 160 ? ex.Message[..160] : ex.Message; }
+    }
+
+    private async Task SignOutCodexAsync()
+    {
+        var choice = System.Windows.MessageBox.Show(
+            "Signing out here also signs out official Codex apps using this Windows profile. Continue?",
+            "Sign out of ChatGPT / Codex", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (choice == System.Windows.MessageBoxResult.Yes) await _codexAccount.LogoutAsync().ConfigureAwait(false);
+    }
+
+    private void NormalizeProviderEffort()
+    {
+        var normalized = QIsCodexSelected
+            ? CodexModelSelectionPolicy.NormalizeEffort(SelectedCodexModel, _settings.QReasoningEffort)
+            : QProviderPolicy.NormalizeEffort(_settings.QSelectedProvider, _settings.QSelectedModel, _settings.QReasoningEffort);
+        if (string.Equals(normalized, _settings.QReasoningEffort, StringComparison.OrdinalIgnoreCase)) return;
+        _settings.QReasoningEffort = normalized;
+        RaisePropertyChanged(nameof(QReasoningEffort));
+    }
+
+    private void OnCodexAccountChanged(CodexAccountSnapshot snapshot)
+    {
+        void Apply()
+        {
+            _codexModels = snapshot.Models ?? _codexModels;
+            NormalizeProviderEffort();
+            RaisePropertyChanged(nameof(QCodexIsConnected));
+            RaisePropertyChanged(nameof(QCodexLoginPending));
+            RaisePropertyChanged(nameof(QCodexActionLabel));
+            RaisePropertyChanged(nameof(QCodexAccountStatus));
+            RaisePropertyChanged(nameof(QCodexUsageStatus));
+            RaisePropertyChanged(nameof(QModelOptions));
+            RaisePropertyChanged(nameof(QReasoningEffortOptions));
+        }
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess()) Apply(); else dispatcher.BeginInvoke(Apply);
     }
     public bool ShowClipboard { get => _settings.ShowClipboard; set { Set(v => _settings.ShowClipboard = v, value); _apply(); } }
     public bool ShowBatteryTime { get => _settings.ShowBatteryTime; set { Set(v => _settings.ShowBatteryTime = v, value); _apply(); } }

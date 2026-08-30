@@ -158,7 +158,7 @@ public sealed class AppSettings
     public string QSelectedModel { get; set; } = "gpt-4o-mini";
     public QCaptureMode QCaptureMode { get; set; } = QCaptureMode.ActiveWindow;
     public bool QIncludeScreenImage { get; set; } = true;
-    public string QOllamaBaseUrl { get; set; } = "http://localhost:11434/v1";
+    public string QOllamaBaseUrl { get; set; } = "http://localhost:11434";
     public int QTimeoutSeconds { get; set; } = 90;
     public int QMaxResponseTokens { get; set; } = 8192;
     public string QReasoningEffort { get; set; } = "auto";

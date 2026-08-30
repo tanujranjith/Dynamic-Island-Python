@@ -113,12 +113,12 @@ public sealed class SettingsService(LoggingService log)
         if (!Enum.IsDefined(settings.QCaptureMode)) settings.QCaptureMode = Models.QCaptureMode.ActiveWindow;
         settings.QSelectedProvider = string.IsNullOrWhiteSpace(settings.QSelectedProvider) ? "openai" : settings.QSelectedProvider.Trim();
         settings.QSelectedModel = string.IsNullOrWhiteSpace(settings.QSelectedModel) ? "gpt-4o-mini" : settings.QSelectedModel.Trim();
-        settings.QOllamaBaseUrl = string.IsNullOrWhiteSpace(settings.QOllamaBaseUrl) ? "http://localhost:11434/v1" : settings.QOllamaBaseUrl.TrimEnd('/');
+        settings.QOllamaBaseUrl = string.IsNullOrWhiteSpace(settings.QOllamaBaseUrl) ? "http://localhost:11434" : settings.QOllamaBaseUrl.TrimEnd('/');
         settings.QTimeoutSeconds = Math.Clamp(settings.QTimeoutSeconds, 10, 300);
         settings.QMaxResponseTokens = Math.Clamp(settings.QMaxResponseTokens, 2048, 32768);
         settings.QReasoningEffort = settings.QReasoningEffort?.Trim().ToLowerInvariant() switch
         {
-            "minimal" or "low" or "medium" or "high" => settings.QReasoningEffort.Trim().ToLowerInvariant(),
+            "minimal" or "low" or "medium" or "high" or "xhigh" or "max" or "ultra" => settings.QReasoningEffort.Trim().ToLowerInvariant(),
             _ => "auto"
         };
         settings.QAskSystemPrompt ??= "";
