@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory = $true)][string]$CodexExe,
     [Parameter(Mandatory = $true)][string]$CodeModeHostExe,
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\dist'),
-    [string]$AppVersion = '1.0.6',
+    [string]$AppVersion,
     [string]$CodexVersion = '0.151.0',
     [string]$ExpectedCodexSha256 = 'cf68265897197ac5f3bff6a10c168eec159842b353129726da5e3ed6b91ef0f4',
     [string]$ExpectedCodeModeHostSha256 = '4ea17cf938023f2d0c292b6dbcd4d51e7fbdf72f3885cf341017a380a87e77dc'
@@ -12,6 +12,20 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($AppVersion)) {
+    $projectPath = Join-Path $PSScriptRoot '..\DynamicIsland.Windows\DynamicIsland.Windows.csproj'
+    [xml]$project = Get-Content -LiteralPath $projectPath
+    $versionNode = $project.SelectSingleNode('/Project/PropertyGroup/Version')
+    if ($null -eq $versionNode -or [string]::IsNullOrWhiteSpace($versionNode.InnerText)) {
+        throw "App version was not supplied and could not be read from $projectPath."
+    }
+    $AppVersion = $versionNode.InnerText.Trim()
+}
+
+if ($AppVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+    throw "App version '$AppVersion' must use MAJOR.MINOR.PATCH format."
+}
 
 $publishedExePath = (Resolve-Path -LiteralPath $PublishedExe).Path
 $codexExePath = (Resolve-Path -LiteralPath $CodexExe).Path
