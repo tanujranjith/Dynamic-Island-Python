@@ -823,13 +823,16 @@
 
                     <!-- Accessories share one horizontal lane while remaining distinct cards. -->
                     <DockPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" LastChildFill="True">
-                        <Border x:Name="LiveWidgetsStrip" DockPanel.Dock="Right" Width="230" Height="64"
+                        <Border x:Name="LiveWidgetsStrip" DockPanel.Dock="Right"
+                                Width="{Binding LiveWidgetRailWidth}" Height="64"
                                 Margin="8,8,0,0" CornerRadius="16" Background="Transparent"
                                 Visibility="{Binding ShowWidgetsPanel, Converter={StaticResource BoolToVisibility}}">
-                            <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
-                                          PanningMode="HorizontalOnly" CanContentScroll="True">
+                            <ScrollViewer x:Name="LiveWidgetsScroller"
+                                          HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                          PanningMode="HorizontalOnly" CanContentScroll="True"
+                                          PreviewMouseWheel="LiveWidgetsScroller_PreviewMouseWheel">
                                 <StackPanel Orientation="Horizontal">
-                            <Border Width="210" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
+                            <Border Width="180" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
                                     Background="#FF1A2028"
                                     Visibility="{Binding ShowWeather, Converter={StaticResource BoolToVisibility}}">
                                 <Grid>
@@ -849,7 +852,7 @@
                                 </Grid>
                             </Border>
 
-                            <Border Width="150" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
+                            <Border Width="136" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
                                     Background="#FF1A2028"
                                     Visibility="{Binding ShowCountdown, Converter={StaticResource BoolToVisibility}}">
                                 <StackPanel VerticalAlignment="Center">
@@ -861,7 +864,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Border Width="210" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
+                            <Border Width="190" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
                                     Background="#FF1A2028"
                                     Visibility="{Binding ShowNextMeeting, Converter={StaticResource BoolToVisibility}}">
                                 <Grid>
@@ -883,7 +886,7 @@
                                 </Grid>
                             </Border>
 
-                            <Border Width="150" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
+                            <Border Width="142" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
                                     Background="#FF1A2028"
                                     Visibility="{Binding ShowBatteryTime, Converter={StaticResource BoolToVisibility}}">
                                 <StackPanel VerticalAlignment="Center">
@@ -900,7 +903,7 @@
                                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Width="140" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16" Background="#FF1A2028">
+                                        <Border Width="132" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16" Background="#FF1A2028">
                                             <StackPanel>
                                                 <TextBlock Text="{Binding Label}" FontFamily="Segoe UI Variable Text" FontSize="8"
                                                            FontWeight="SemiBold" Foreground="#FF8F9BA8" TextTrimming="CharacterEllipsis" />
@@ -917,7 +920,7 @@
                                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Width="140" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16" Background="#FF1A2028">
+                                        <Border Width="132" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16" Background="#FF1A2028">
                                             <Grid>
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                                 <StackPanel>

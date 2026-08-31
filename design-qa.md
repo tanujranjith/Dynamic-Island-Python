@@ -8,12 +8,14 @@
   - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\privacy-dot-compact-confirmed.png`
   - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\airpods-widgets-stacked-before-row-fix.png`
   - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\expanded-floating-privacy-dot-before-live-activity.png`
+  - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\countdown-widget-clipped-before-dynamic-rail.png`
 - Source pixels:
   - Detached privacy screenshot: 742 × 681
   - First-fix privacy screenshot: 516 × 169
   - Confirmed compact-dot screenshot: 364 × 165
   - Stacked accessory-row screenshot: 962 × 209
   - Expanded floating-dot screenshot: 1276 × 490
+  - Clipped countdown screenshot: 905 × 265
 - Latest implementation screenshot: unavailable after the current rebuild
 - Implementation viewport: native transparent WPF window with a 1200-DIP canvas
 - Density normalization: not possible until a post-fix native capture is available
@@ -26,6 +28,8 @@
 - The expanded activity contains the semantic sensor dot, the live sensor state, and a short `LIVE` marker.
 - Sensor activation while expanded uses a 260 ms scale/slide and 180 ms fade.
 - AirPods and live widgets remain distinct cards in one 64-DIP horizontal accessory lane.
+- The live-widget rail sizes from visible cards up to 332 DIP, fitting weather and countdown together while preserving AirPods space.
+- A third widget and beyond can be reached with horizontal mouse-wheel scrolling.
 
 The layout follows Apple's guidance to preserve information between compact and expanded presentations, keep content snug, avoid notification-style layouts, and animate existing live information into its new position.
 
@@ -68,6 +72,16 @@ The layout follows Apple's guidance to preserve information between compact and 
 - Root app: republished and relaunched successfully as process 16712.
 - Post-fix visual evidence: pending a same-state expanded screenshot.
 
+### Pass 7 — countdown overflow
+
+- [P1] The fixed 230-DIP widget viewport showed weather but clipped the countdown card at the island edge.
+  - Evidence: `countdown-widget-clipped-before-dynamic-rail.png`.
+  - Fix: replaced the fixed width with a content-derived rail capped at 332 DIP, reduced weather to 180 DIP and countdown to 136 DIP, and added horizontal mouse-wheel navigation for additional widgets.
+- Release build: succeeded with zero warnings and zero errors.
+- Automated tests: 97 passed, 0 failed, 0 skipped.
+- Root app: republished and relaunched successfully as process 20344.
+- Post-fix visual evidence: pending a weather-plus-countdown screenshot.
+
 ## Required fidelity surfaces
 
 - Fonts and typography: the inline activity uses the existing Segoe UI Variable hierarchy at 10.5 and 8 DIP with semibold/bold optical contrast; post-fix capture is pending.
@@ -83,11 +97,17 @@ The layout follows Apple's guidance to preserve information between compact and 
   - Evidence: the pre-fix screenshot shows the detached orb, while the new build and process evidence do not show the revised pixels.
   - Impact: final pill width, truncation, control clearance, and motion endpoint cannot yet be visually certified.
   - Fix: capture the expanded camera-active state and compare it directly with the pre-fix expanded screenshot.
+- [P1] The rebuilt dynamic widget rail has not been captured.
+  - Location: expanded AirPods and live-widget accessory lane.
+  - Evidence: the source screenshot shows countdown clipped after weather; code, build, test, and process evidence confirm the fix is running but do not show its pixels.
+  - Impact: final AirPods truncation and full countdown visibility cannot yet be visually certified.
+  - Fix: capture the expanded state with AirPods, weather, and countdown visible.
 
 ## Implementation checklist
 
 - Capture the expanded camera-active state.
 - Confirm the outside orb is absent.
 - Confirm the inline activity is snug, legible, and clear of the controls and progress bar.
+- Capture AirPods, weather, and countdown together and confirm all three cards remain legible.
 
 final result: blocked

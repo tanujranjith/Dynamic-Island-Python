@@ -1061,6 +1061,14 @@ public partial class IslandWindow : Window
 
     private void ClipboardButton_Click(object sender, RoutedEventArgs e) => OpenClipboardRequested?.Invoke(this, EventArgs.Empty);
     private void JoinMeeting_Click(object sender, RoutedEventArgs e) { _viewModel.OpenMeetingCommand.Execute(null); e.Handled = true; }
+    private void LiveWidgetsScroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer scroller || scroller.ScrollableWidth <= 0d) return;
+        scroller.ScrollToHorizontalOffset(
+            Math.Clamp(scroller.HorizontalOffset - e.Delta, 0d, scroller.ScrollableWidth));
+        e.Handled = true;
+    }
+
     private void TimerButton_Click(object sender, RoutedEventArgs e)
     {
         ShowTimerPanel();

@@ -662,6 +662,20 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     // True when any of the grouped live-activity widgets is enabled (so the panel can be shown/hidden cleanly).
     public bool ShowWidgetsPanel => !FocusModeEnabled && (ShowWeather || ShowStocks || ShowCountdown || ShowNextMeeting
         || ShowWorldClocks || ShowBatteryTime);
+    public double LiveWidgetRailWidth
+    {
+        get
+        {
+            var width = 0d;
+            if (ShowWeather) width += 188d;
+            if (ShowCountdown) width += 144d;
+            if (ShowNextMeeting) width += 198d;
+            if (ShowBatteryTime) width += 150d;
+            if (ShowWorldClocks) width += WorldClocks.Count * 140d;
+            if (ShowStocks) width += Stocks.Count * 140d;
+            return Math.Min(332d, width);
+        }
+    }
     // Secondary widgets surfaced under the status panel in the redesigned expanded island (weather and the
     // system monitor get their own cards, so they're excluded here). Collapses the strip when nothing's on.
     public bool ShowStatusExtras => ShowBatteryLevel || IsCharging
@@ -1183,7 +1197,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         _weather = value;
         RaiseMany(nameof(ShowWeather), nameof(WeatherGlyph), nameof(WeatherTempText), nameof(WeatherDescText),
-            nameof(WeatherCityText), nameof(ShowWidgetsPanel));
+            nameof(WeatherCityText), nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth));
     });
     private void OnSysStatsChanged(object? sender, SystemStats value) => OnUi(() =>
     {
@@ -1200,12 +1214,13 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _stockTiles = value
             .Select(q => new StockTile(q.Symbol, q.PriceText, q.ChangeText, q.Up, Sparkline(q.History, 34, 12)))
             .ToArray();
-        RaiseMany(nameof(ShowStocks), nameof(Stocks));
+        RaiseMany(nameof(ShowStocks), nameof(Stocks), nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth));
     });
     private void OnMeetingChanged(object? sender, MeetingInfo? value) => OnUi(() =>
     {
         _meeting = value;
-        RaiseMany(nameof(ShowNextMeeting), nameof(MeetingTitle), nameof(MeetingWhen), nameof(HasMeetingJoin));
+        RaiseMany(nameof(ShowNextMeeting), nameof(MeetingTitle), nameof(MeetingWhen), nameof(HasMeetingJoin),
+            nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth));
     });
     private void OnNotified(object? sender, NotificationInfo value) => OnUi(() =>
     {
@@ -1393,7 +1408,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseMany(nameof(BatteryText), nameof(ChargingText), nameof(BatteryGlyph),
             nameof(ShowBattery), nameof(IsCharging), nameof(IsPowerConnected), nameof(ShowBatteryLevel),
             nameof(ShowCompactChargingIndicator), nameof(ShowCompactSecondary), nameof(ShowBatteryTime), nameof(BatteryTimeText),
-            nameof(ShowStatusExtras), nameof(ShowWidgetsPanel), nameof(PrimaryActivity),
+            nameof(ShowStatusExtras), nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth), nameof(PrimaryActivity),
             nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText),
             nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowCompactRingTrack));
     }
@@ -1414,7 +1429,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         RaiseMany(nameof(FocusModeEnabled), nameof(FocusModeText),
             nameof(ShowWeather), nameof(ShowSystemMonitor), nameof(ShowCountdown), nameof(ShowStocks), nameof(ShowWorldClocks),
-            nameof(ShowNextMeeting), nameof(ShowQuickLaunch), nameof(ShowBatteryTime), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
+            nameof(ShowNextMeeting), nameof(ShowQuickLaunch), nameof(ShowBatteryTime), nameof(ShowWidgetsPanel),
+            nameof(LiveWidgetRailWidth), nameof(ShowStatusExtras),
             nameof(ShowNotification), nameof(ShowBanner), nameof(IsAirPodsBannerActive),
             nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(ShowAirPods), nameof(ShowAirPodsCard));
     }
@@ -1516,7 +1532,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(ShowBatteryTime), nameof(BatteryTimeText), nameof(ShowQuickLaunch), nameof(LaunchItems),
             nameof(ShowNotification), nameof(ShowBanner), nameof(IsAirPodsBannerActive),
             nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody),
-            nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
+            nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth), nameof(ShowStatusExtras),
             nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(PinExpanded), nameof(ScrollTitles));
         RaiseMediaCommandsCanExecute();
         (ToggleMuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -1539,7 +1555,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public void RefreshLaunchAndZones()
     {
         UpdateCachedSettings();
-        RaiseMany(nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowWorldClocks), nameof(WorldClocks));
+        RaiseMany(nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowWorldClocks), nameof(WorldClocks),
+            nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth));
     }
 
     private void UpdateCachedSettings()
