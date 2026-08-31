@@ -96,6 +96,8 @@ public sealed class AppSettings
     public bool ShowSystemMonitor { get; set; }
     public bool ShowRamInCompact { get; set; } // show RAM usage on the collapsed (compact) island
     public bool RealAudioSpectrum { get; set; }
+    public bool ShowMusicVisualizer { get; set; } = true;
+    public bool ShowConnectivity { get; set; } = true;
 
     // ===== Layout order (csv of: media,volume,status) =====
     public string ExpandedOrder { get; set; } = "media,volume,status";

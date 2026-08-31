@@ -235,6 +235,8 @@ public sealed class SettingsViewModel : ObservableObject
     public bool ShowSystemMonitor { get => _settings.ShowSystemMonitor; set { Set(v => _settings.ShowSystemMonitor = v, value); _apply(); } }
     public bool ShowRamInCompact { get => _settings.ShowRamInCompact; set { Set(v => _settings.ShowRamInCompact = v, value); _apply(); } }
     public bool RealAudioSpectrum { get => _settings.RealAudioSpectrum; set { Set(v => _settings.RealAudioSpectrum = v, value); _apply(); } }
+    public bool ShowMusicVisualizer { get => _settings.ShowMusicVisualizer; set { Set(v => _settings.ShowMusicVisualizer = v, value); _apply(); } }
+    public bool ShowConnectivity { get => _settings.ShowConnectivity; set { Set(v => _settings.ShowConnectivity = v, value); _apply(); } }
 
     // ===== Widgets / live activities (new) =====
     public bool ShowQuickLaunch { get => _settings.ShowQuickLaunch; set { Set(v => _settings.ShowQuickLaunch = v, value); _apply(); } }

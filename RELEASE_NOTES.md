@@ -1,3 +1,18 @@
+# Dynamic Island v1.0.10
+
+## New playback and connectivity features
+
+- Added an expanded music visualizer with animated fallback bars and optional real audio-spectrum response.
+- Added Wi-Fi and Bluetooth status cards with one-click shortcuts to the corresponding Windows settings pages.
+- Added settings toggles for the visualizer and connectivity cards.
+
+## Verification
+
+- Release build: succeeded with 0 warnings and 0 errors.
+- Automated tests: 97 passed, 0 failed, 0 skipped.
+
+---
+
 # Dynamic Island v1.0.9
 
 ## Responsive expanded widgets

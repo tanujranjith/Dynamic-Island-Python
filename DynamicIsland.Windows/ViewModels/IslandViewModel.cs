@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Net.NetworkInformation;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
@@ -55,6 +56,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private QuoteItem[] _quotes = [];
     private int _quoteIndex;
     private readonly System.Windows.Threading.DispatcherTimer _quoteTimer = new();
+    private readonly System.Windows.Threading.DispatcherTimer _visualizerTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
+    private readonly System.Windows.Threading.DispatcherTimer _connectivityTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private double _visualizerPhase;
     private (string Label, TimeZoneInfo Zone)[] _worldClockZones = [];
     private string _worldClockConfig = string.Empty;
     private string[] _expandedOrder = ["media", "volume", "status"];
@@ -156,10 +160,16 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _volumeWarningTimer.Tick += (_, _) => { _volumeWarningTimer.Stop(); _volumeWarningActive = false; RaiseMany(nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody)); };
         _airPodsBannerTimer.Tick += (_, _) => { _airPodsBannerTimer.Stop(); _airPodsBannerActive = false; RaiseMany(nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody)); };
         _quoteTimer.Tick += (_, _) => OnUi(AdvanceQuote);
+        _visualizerTimer.Tick += (_, _) => OnUi(() => { if (IsAudioActive) { _visualizerPhase += 0.32; RaiseVisualizerProperties(); } });
+        _visualizerTimer.Start();
+        _connectivityTimer.Tick += (_, _) => OnUi(() => RaiseMany(nameof(WifiConnected), nameof(WifiStatusText), nameof(WifiStatusBrush)));
+        _connectivityTimer.Start();
         LaunchCommand = new RelayCommand<string>(LaunchApp);
         OpenMeetingCommand = new RelayCommand(() => { if (!string.IsNullOrWhiteSpace(_meeting?.JoinUrl)) OpenUrl(_meeting!.JoinUrl); });
         SeekCommand = new RelayCommand<double>(f => _ = _mediaService.SeekFractionAsync(f));
         OpenMediaAppCommand = new RelayCommand(() => { if (Settings.ClickArtOpensApp) _mediaService.LaunchSource(); });
+        OpenWifiSettingsCommand = new RelayCommand(() => LaunchApp("ms-settings:network-wifi"));
+        OpenBluetoothSettingsCommand = new RelayCommand(() => LaunchApp("ms-settings:bluetooth"));
         ToggleFavoriteCommand = new RelayCommand(() => IsFavorite = !IsFavorite);
         SelectOutputDeviceCommand = new RelayCommand<string>(id => { if (!string.IsNullOrEmpty(id)) _audioService.SetDefaultOutputDevice(id); });
         ToggleFocusCommand = new RelayCommand(() =>
@@ -661,7 +671,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool ShowClipboard => Settings.ShowClipboard;
     // True when any of the grouped live-activity widgets is enabled (so the panel can be shown/hidden cleanly).
     public bool ShowWidgetsPanel => !FocusModeEnabled && (ShowWeather || ShowStocks || ShowCountdown || ShowNextMeeting
-        || ShowWorldClocks || ShowBatteryTime);
+        || ShowWorldClocks || ShowBatteryTime || ShowConnectivity);
     public double LiveWidgetRailWidth
     {
         get
@@ -675,6 +685,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             if (ShowBatteryTime) width += 150d;
             if (ShowWorldClocks) width += WorldClocks.Count * 140d;
             if (ShowStocks) width += Stocks.Count * 140d;
+            if (ShowConnectivity) width += 280d;
             return Math.Min(332d, width);
         }
     }
@@ -690,7 +701,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         (ShowNextMeeting ? 1 : 0) +
         (ShowBatteryTime ? 1 : 0) +
         (ShowWorldClocks ? WorldClocks.Count : 0) +
-        (ShowStocks ? Stocks.Count : 0);
+        (ShowStocks ? Stocks.Count : 0) +
+        (ShowConnectivity ? 2 : 0);
     private double ExpandedLiveWidgetCardWidth => LiveWidgetCount == 0
         ? 0d
         : Math.Max(132d, (AccessoryLaneWidth - (LiveWidgetCount * 8d)) / LiveWidgetCount);
@@ -701,6 +713,18 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public double MeetingWidgetWidth => GetLiveWidgetCardWidth(190d);
     public double BatteryTimeWidgetWidth => GetLiveWidgetCardWidth(142d);
     public double SmallLiveWidgetWidth => GetLiveWidgetCardWidth(132d);
+    public bool ShowConnectivity => Settings.ShowConnectivity;
+    public bool WifiConnected => IsWifiConnected();
+    public string WifiStatusText => WifiConnected ? "Connected" : "Offline";
+    public MediaBrush WifiStatusBrush => FrozenBrush(WifiConnected ? "#FF30D158" : "#FFFF9F0A");
+    public bool BluetoothAvailable => _airPods.IsAvailable;
+    public string BluetoothStatusText => BluetoothAvailable ? "Available" : "Unavailable";
+    public MediaBrush BluetoothStatusBrush => FrozenBrush(BluetoothAvailable ? "#FF30D158" : "#FFFF9F0A");
+    private static bool IsWifiConnected()
+    {
+        try { return NetworkInterface.GetAllNetworkInterfaces().Any(n => n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 && n.OperationalStatus == OperationalStatus.Up); }
+        catch { return false; }
+    }
     private void RaiseLiveWidgetLayoutProperties() => RaiseMany(
         nameof(LiveWidgetRailWidth), nameof(WeatherWidgetWidth), nameof(CountdownWidgetWidth),
         nameof(MeetingWidgetWidth), nameof(BatteryTimeWidgetWidth), nameof(SmallLiveWidgetWidth));
@@ -799,6 +823,23 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     // ===== Audio spectrum (real, from loopback) =====
     public bool UseRealSpectrum => Settings.RealAudioSpectrum && _spectrumService.IsActive && IsAudioActive;
     public bool ShowAnimatedWave => IsAudioActive && !UseRealSpectrum;
+    public bool ShowMusicVisualizer => Settings.ShowMusicVisualizer && IsAudioActive;
+    public double VisualizerBar0Height => VisualizerHeight(0);
+    public double VisualizerBar1Height => VisualizerHeight(1);
+    public double VisualizerBar2Height => VisualizerHeight(2);
+    public double VisualizerBar3Height => VisualizerHeight(3);
+    public double VisualizerBar4Height => VisualizerHeight(4);
+    public double VisualizerBar5Height => VisualizerHeight(5);
+    public double VisualizerBar6Height => VisualizerHeight(6);
+    private double VisualizerHeight(int index)
+    {
+        var value = UseRealSpectrum ? Band(index) : 0.15 + 0.42 * ((Math.Sin(_visualizerPhase + index * 0.78) + 1) / 2);
+        return 7 + Math.Clamp(value, 0.08, 1.0) * 25;
+    }
+    private void RaiseVisualizerProperties() => RaiseMany(
+        nameof(VisualizerBar0Height), nameof(VisualizerBar1Height), nameof(VisualizerBar2Height),
+        nameof(VisualizerBar3Height), nameof(VisualizerBar4Height), nameof(VisualizerBar5Height),
+        nameof(VisualizerBar6Height));
     public double SpectrumBand0 => Band(0);
     public double SpectrumBand1 => Band(1);
     public double SpectrumBand2 => Band(2);
@@ -997,6 +1038,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public ICommand DismissCurrentNotificationCommand { get; private set; } = null!;
     public ICommand OpenNotificationCommand { get; private set; } = null!;
     public ICommand DismissHistoryItemCommand { get; private set; } = null!;
+    public ICommand OpenWifiSettingsCommand { get; private set; } = null!;
+    public ICommand OpenBluetoothSettingsCommand { get; private set; } = null!;
 
     public void ApplySettings()
     {
@@ -1234,7 +1277,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         while (_netHistory.Count > SparkHistoryLength) _netHistory.Dequeue();
         _netSparkline = Sparkline(_netHistory, 46, 16);
         RaiseMany(nameof(ShowSystemMonitor), nameof(ShowCompactRam), nameof(CpuText), nameof(RamText), nameof(NetText),
-            nameof(RamPercentValue), nameof(NetSparkline));
+            nameof(RamPercentValue), nameof(NetSparkline), nameof(WifiConnected), nameof(WifiStatusText), nameof(WifiStatusBrush));
     });
     private void OnStocksChanged(object? sender, IReadOnlyList<StockQuote> value) => OnUi(() =>
     {
@@ -1360,7 +1403,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         {
             nameof(SpectrumBand0), nameof(SpectrumBand1), nameof(SpectrumBand2), nameof(SpectrumBand3),
             nameof(SpectrumBand4), nameof(SpectrumBand5), nameof(SpectrumBand6),
-            nameof(UseRealSpectrum), nameof(ShowAnimatedWave)
+            nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(ShowMusicVisualizer),
+            nameof(VisualizerBar0Height), nameof(VisualizerBar1Height), nameof(VisualizerBar2Height),
+            nameof(VisualizerBar3Height), nameof(VisualizerBar4Height), nameof(VisualizerBar5Height), nameof(VisualizerBar6Height)
         }) RaisePropertyChanged(name);
     });
 
@@ -1427,7 +1472,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(IsMuted), nameof(IsAudioActive), nameof(ShowAudioStatusText), nameof(ShowVolume),
             nameof(ShowMedia), nameof(PrimaryActivity), nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText),
             nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowCompactRingTrack),
-            nameof(UseRealSpectrum), nameof(ShowAnimatedWave));
+            nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(ShowMusicVisualizer),
+            nameof(VisualizerBar0Height), nameof(VisualizerBar1Height), nameof(VisualizerBar2Height),
+            nameof(VisualizerBar3Height), nameof(VisualizerBar4Height), nameof(VisualizerBar5Height), nameof(VisualizerBar6Height));
         (ToggleMuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
@@ -1470,7 +1517,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(AirPodsCompactBatteryText),
             nameof(ShowAirPodsLeft), nameof(ShowAirPodsRight), nameof(ShowAirPodsCase),
             nameof(AirPodsLeftCharging), nameof(AirPodsRightCharging), nameof(AirPodsCaseCharging),
-            nameof(AirPodsStatusText), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody));
+            nameof(AirPodsStatusText), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody),
+            nameof(BluetoothAvailable), nameof(BluetoothStatusText), nameof(BluetoothStatusBrush));
         RaiseLiveWidgetLayoutProperties();
     }
 
@@ -1562,7 +1610,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(ShowNotification), nameof(ShowBanner), nameof(IsAirPodsBannerActive),
             nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody),
             nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth), nameof(ShowStatusExtras),
-            nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(PinExpanded), nameof(ScrollTitles));
+            nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(ShowMusicVisualizer), nameof(ShowConnectivity), nameof(PinExpanded), nameof(ScrollTitles));
         RaiseLiveWidgetLayoutProperties();
         RaiseMediaCommandsCanExecute();
         (ToggleMuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -1754,6 +1802,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _volumeWarningTimer.Stop();
         _airPodsBannerTimer.Stop();
         _quoteTimer.Stop();
+        _visualizerTimer.Stop();
+        _connectivityTimer.Stop();
         _batteryService.Changed -= OnBatteryChanged;
         _clockService.Tick -= OnClockTick;
         _timerAlarmService.Changed -= OnTimerAlarmChanged;

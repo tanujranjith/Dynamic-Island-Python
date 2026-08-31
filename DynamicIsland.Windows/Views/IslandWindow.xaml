@@ -607,13 +607,26 @@
                     </Grid>
 
                     <Grid Grid.Column="1">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="86" /></Grid.ColumnDefinitions>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                        <TextBlock Text="{Binding MediaTitle}" MaxWidth="330" TextTrimming="CharacterEllipsis"
-                                   FontFamily="{Binding UiFontFamily}" FontSize="{Binding ExpandedMediaTitleFontSize}" FontWeight="SemiBold"
-                                   Foreground="{Binding PrimaryTextBrush}" />
-                        <TextBlock Grid.Row="1" Text="{Binding MediaArtist}" Margin="0,3,0,0" MaxWidth="340"
-                                   TextTrimming="CharacterEllipsis" FontFamily="{Binding UiFontFamily}" FontSize="{Binding ExpandedMediaArtistFontSize}"
-                                   Foreground="{Binding SecondaryTextBrush}" />
+                        <StackPanel Grid.ColumnSpan="2">
+                            <TextBlock Text="{Binding MediaTitle}" MaxWidth="330" TextTrimming="CharacterEllipsis"
+                                       FontFamily="{Binding UiFontFamily}" FontSize="{Binding ExpandedMediaTitleFontSize}" FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}" />
+                            <TextBlock Text="{Binding MediaArtist}" Margin="0,3,0,0" MaxWidth="340"
+                                       TextTrimming="CharacterEllipsis" FontFamily="{Binding UiFontFamily}" FontSize="{Binding ExpandedMediaArtistFontSize}"
+                                       Foreground="{Binding SecondaryTextBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Grid.RowSpan="2" Orientation="Horizontal" Height="34" VerticalAlignment="Center"
+                                    HorizontalAlignment="Right" Margin="4,0,0,0" Visibility="{Binding ShowMusicVisualizer, Converter={StaticResource BoolToVisibility}}">
+                            <Rectangle Width="4" Height="{Binding VisualizerBar0Height}" RadiusX="2" RadiusY="2" Fill="{Binding AccentBrush}" VerticalAlignment="Bottom" Margin="1,0" />
+                            <Rectangle Width="4" Height="{Binding VisualizerBar1Height}" RadiusX="2" RadiusY="2" Fill="{Binding AccentBrush}" VerticalAlignment="Bottom" Margin="1,0" />
+                            <Rectangle Width="4" Height="{Binding VisualizerBar2Height}" RadiusX="2" RadiusY="2" Fill="{Binding AccentBrush}" VerticalAlignment="Bottom" Margin="1,0" />
+                            <Rectangle Width="4" Height="{Binding VisualizerBar3Height}" RadiusX="2" RadiusY="2" Fill="{Binding AccentBrush}" VerticalAlignment="Bottom" Margin="1,0" />
+                            <Rectangle Width="4" Height="{Binding VisualizerBar4Height}" RadiusX="2" RadiusY="2" Fill="{Binding AccentBrush}" VerticalAlignment="Bottom" Margin="1,0" />
+                            <Rectangle Width="4" Height="{Binding VisualizerBar5Height}" RadiusX="2" RadiusY="2" Fill="{Binding AccentBrush}" VerticalAlignment="Bottom" Margin="1,0" />
+                            <Rectangle Width="4" Height="{Binding VisualizerBar6Height}" RadiusX="2" RadiusY="2" Fill="{Binding AccentBrush}" VerticalAlignment="Bottom" Margin="1,0" />
+                        </StackPanel>
                     </Grid>
 
                     <Grid Grid.Column="2" VerticalAlignment="Top">
@@ -832,6 +845,24 @@
                                           PanningMode="HorizontalOnly" CanContentScroll="True"
                                           PreviewMouseWheel="LiveWidgetsScroller_PreviewMouseWheel">
                                 <StackPanel Orientation="Horizontal">
+                            <Border Width="{Binding SmallLiveWidgetWidth}" Height="64" Margin="0,0,8,0" Padding="10,7" CornerRadius="16"
+                                    Background="#FF1A2028" Visibility="{Binding ShowConnectivity, Converter={StaticResource BoolToVisibility}}">
+                                <Button Command="{Binding OpenWifiSettingsCommand}" Background="Transparent" BorderThickness="0" Padding="0">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="&#xE701;" FontFamily="Segoe Fluent Icons" FontSize="21" Foreground="{Binding WifiStatusBrush}" />
+                                        <StackPanel Margin="8,0,0,0"><TextBlock Text="WI-FI" FontSize="8" Foreground="#FF8F9BA8" /><TextBlock Text="{Binding WifiStatusText}" FontSize="11" Foreground="{StaticResource AppleWhite}" /></StackPanel>
+                                    </StackPanel>
+                                </Button>
+                            </Border>
+                            <Border Width="{Binding SmallLiveWidgetWidth}" Height="64" Margin="0,0,8,0" Padding="10,7" CornerRadius="16"
+                                    Background="#FF1A2028" Visibility="{Binding ShowConnectivity, Converter={StaticResource BoolToVisibility}}">
+                                <Button Command="{Binding OpenBluetoothSettingsCommand}" Background="Transparent" BorderThickness="0" Padding="0">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="&#xE702;" FontFamily="Segoe Fluent Icons" FontSize="21" Foreground="{Binding BluetoothStatusBrush}" />
+                                        <StackPanel Margin="8,0,0,0"><TextBlock Text="BLUETOOTH" FontSize="8" Foreground="#FF8F9BA8" /><TextBlock Text="{Binding BluetoothStatusText}" FontSize="11" Foreground="{StaticResource AppleWhite}" /></StackPanel>
+                                    </StackPanel>
+                                </Button>
+                            </Border>
                             <Border Width="{Binding WeatherWidgetWidth}" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
                                     Background="#FF1A2028"
                                     Visibility="{Binding ShowWeather, Converter={StaticResource BoolToVisibility}}">
