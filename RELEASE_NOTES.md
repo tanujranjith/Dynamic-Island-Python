@@ -1,3 +1,26 @@
+# Dynamic Island v1.0.7
+
+## Live activities and expanded layout
+
+- Added the enabled live-widget row to the expanded island, including weather, countdown, meetings, battery time, world clocks, and stocks.
+- Combined connected AirPods and live widgets into one compact horizontal lane while keeping them as separate cards.
+- Added Apple-style camera and microphone privacy presentation: a minimal green/orange orb when compact and an inline Live Activity when expanded.
+- Improved Windows privacy-sensor detection across nested packaged and non-packaged consent-store entries.
+
+## Cleanup and reliability
+
+- Removed the webcam presence, person-detection, face-enrollment, privacy-blur, and camera-automation subsystem, including OpenCV dependencies and the legacy Python camera build.
+- Fixed Codex subscription thread creation to send the current `read-only` sandbox enum instead of the rejected `readOnly` value.
+- Added regression coverage for the Codex thread sandbox contract.
+
+## Verification
+
+- Release build: succeeded with 0 warnings and 0 errors.
+- Automated tests: 97 passed, 0 failed, 0 skipped.
+- Native expanded-state validation: privacy Live Activity, AirPods card, and weather card confirmed in the running root app.
+
+---
+
 # Dynamic Island v1.0.6
 
 ## Provider API refresh
