@@ -27,7 +27,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private readonly ClockService _clockService;
     private readonly TimerAlarmService _timerAlarmService;
     private readonly ThemeService _themeService;
-    private readonly Services.Vision.VisionService _visionService;
     private readonly WeatherService _weatherService;
     private readonly SystemMonitorService _systemMonitorService;
     private readonly AudioSpectrumService _spectrumService;
@@ -45,6 +44,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private bool _volumeWarningActive;
     private bool _airPodsBannerActive;
     private int _bannerSeq;
+    private int _privacySeq;
     private bool _prevAboveVolumeThreshold = true; // initialised true so first audio event never triggers
     private DateTimeOffset _volumeWarnCooldownUntil = DateTimeOffset.MinValue;
     private int _lastWarnedVolumePercent;
@@ -64,7 +64,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private int _notificationSeq;
     private MediaInfo _media = MediaInfo.Empty;
     private AudioState _audio = AudioState.Unknown;
-    private VisionState _vision = VisionState.Disabled;
     private WeatherInfo? _weather;
     private SystemStats _sysStats = SystemStats.Empty;
     private double[] _spectrum = new double[AudioSpectrumService.BandCount];
@@ -76,10 +75,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private bool _isDarkTheme = true;
     private BitmapImage? _artwork;
     private byte[]? _artworkBytes;
-    private BitmapImage? _cameraPreview;
-    private byte[]? _pendingPreviewFrame;
-    private int _previewDispatchPending;
-    private bool _previewRetained;
     private readonly IQSessionController _qSession;
     private readonly IQScreenContextService _qScreen;
     private readonly IQSpeechInputService _qSpeech;
@@ -91,8 +86,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     public IslandViewModel(AppSettings settings, MediaSessionService mediaService,
         AudioSessionService audioService, BatteryService batteryService, ClockService clockService,
-        TimerAlarmService timerAlarmService, ThemeService themeService,
-        Services.Vision.VisionService visionService, WeatherService weatherService,
+        TimerAlarmService timerAlarmService, ThemeService themeService, WeatherService weatherService,
         SystemMonitorService systemMonitorService, AudioSpectrumService spectrumService,
         StocksService stocksService, CalendarService calendarService,
         NotificationListenerService notificationService, PrivacySensorService privacyService,
@@ -107,7 +101,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _clockService = clockService;
         _timerAlarmService = timerAlarmService;
         _themeService = themeService;
-        _visionService = visionService;
         _weatherService = weatherService;
         _systemMonitorService = systemMonitorService;
         _spectrumService = spectrumService;
@@ -152,8 +145,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
         _mediaService.Changed += OnMediaChanged;
         _audioService.Changed += OnAudioChanged;
-        _visionService.Changed += OnVisionChanged;
-        _visionService.FrameReady += OnVisionFrame;
         _weatherService.Changed += OnWeatherChanged;
         _systemMonitorService.Changed += OnSysStatsChanged;
         _spectrumService.BandsChanged += OnSpectrumChanged;
@@ -343,7 +334,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public MediaInfo Media { get => _media; private set { if (SetProperty(ref _media, value)) UpdateArtwork(value.Artwork); } }
     public AudioState Audio { get => _audio; private set => SetProperty(ref _audio, value); }
     public BatteryState Battery { get => _battery; private set => SetProperty(ref _battery, value); }
-    public bool IsExpanded { get => _isExpanded; set { if (SetProperty(ref _isExpanded, value)) { if (value && Settings.QuoteRotation == QuoteRotation.EveryExpand) AdvanceQuote(); UpdatePreviewRetention(); RaiseExpansionProperties(); } } }
+    public bool IsExpanded { get => _isExpanded; set { if (SetProperty(ref _isExpanded, value)) { if (value && Settings.QuoteRotation == QuoteRotation.EveryExpand) AdvanceQuote(); RaiseExpansionProperties(); } } }
     public bool IsCompact => !IsExpanded;
     // When a settings window is open we pin the island expanded so size/appearance changes are visible live.
     public bool KeepExpanded { get => _keepExpanded; set { if (SetProperty(ref _keepExpanded, value)) { RaisePropertyChanged(nameof(PinExpanded)); if (value) IsExpanded = true; } } }
@@ -436,19 +427,22 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool ShowDate => Settings.ShowDate;
     public bool IsAppleStyle => Settings.IslandVisualMode == IslandVisualMode.Apple;
     public bool IsStatsStyle => Settings.IslandVisualMode == IslandVisualMode.Stats;
-    public VisionState Vision { get => _vision; private set => SetProperty(ref _vision, value); }
-    // Secondary status dot (same idiom as the audio dot) — deliberately not part of PrimaryActivity.
-    public bool ShowVisionStatus => Settings.ShowVisionStatus && Settings.VisionEnabled
-        && Vision.Availability == VisionAvailability.Running;
-    public string VisionStatusText => Vision.StatusText;
-    public MediaBrush VisionDotBrush => FrozenBrush(Vision.ColorHex);
-    public bool VisionAlert => ShowVisionStatus && Vision.Alert;
-    public bool ShowVisionButton => Settings.VisionEnabled;
-
     // ===== Mic / camera in-use indicators (read from the Windows privacy consent store) =====
     public bool ShowCameraInUse => Settings.ShowPrivacyIndicators && _privacy.Camera;
     public bool ShowMicInUse => Settings.ShowPrivacyIndicators && _privacy.Microphone;
     public bool ShowPrivacyInUse => ShowCameraInUse || ShowMicInUse;
+    public string PrivacyActivityText => (ShowCameraInUse, ShowMicInUse) switch
+    {
+        (true, true) => "Camera and microphone in use",
+        (true, false) => "Camera in use",
+        (false, true) => "Microphone in use",
+        _ => "No sensor activity"
+    };
+    public string PrivacyActivityGlyph => ShowCameraInUse
+        ? char.ConvertFromUtf32(0xE714)
+        : char.ConvertFromUtf32(0xE720);
+    public MediaBrush PrivacyIndicatorBrush => FrozenBrush(ShowCameraInUse ? "#FF30D158" : "#FFFF9F0A");
+    public int PrivacySeq => _privacySeq;
 
     // ===== AirPods =====
     public AirPodsState AirPods => _airPods;
@@ -524,7 +518,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public double MediaTitleFontSize => Scaled(Settings.MediaTitleSize, 14);
     public double MediaArtistFontSize => Scaled(Settings.MediaArtistSize, 11);
     public double VolumeFontSize => Scaled(Settings.VolumeSize, 13);
-    public double VisionTextFontSize => Scaled(Settings.VisionTextSize, 10);
     public double CompactGlyphFontSize => Scaled(Settings.CompactTextSize, 12);
     public double CompactPrimaryFontSize => Scaled(Settings.CompactTextSize, 13);
     public double CompactSecondaryFontSize => Scaled(Settings.CompactTextSize, 11);
@@ -535,10 +528,13 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     // ===== Focus mode / Weather =====
     public bool FocusModeEnabled => Settings.FocusModeEnabled;
     public string FocusModeText => FocusModeEnabled ? "Focus on" : "Focus off";
-    public bool ShowWeather => !FocusModeEnabled && Settings.ShowWeather && _weather is not null;
-    public string WeatherGlyph => _weather?.Glyph ?? string.Empty;
-    public string WeatherTempText => _weather?.TempText ?? string.Empty;
-    public string WeatherDescText => _weather?.Description ?? string.Empty;
+    public bool ShowWeather => !FocusModeEnabled && Settings.ShowWeather;
+    public string WeatherGlyph => _weather?.Glyph ?? char.ConvertFromUtf32(0xE753);
+    public string WeatherTempText => _weather?.TempText
+        ?? (string.IsNullOrWhiteSpace(Settings.WeatherLocation) ? "Set location" : "Loading…");
+    public string WeatherDescText => _weather?.Description
+        ?? (string.IsNullOrWhiteSpace(Settings.WeatherLocation) ? "Open Settings to choose a city" : Settings.WeatherLocation);
+    public string WeatherCityText => _weather?.City ?? Settings.WeatherLocation;
 
     // ===== System monitor =====
     public bool ShowSystemMonitor => !FocusModeEnabled && Settings.ShowSystemMonitor;
@@ -665,12 +661,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool ShowClipboard => Settings.ShowClipboard;
     // True when any of the grouped live-activity widgets is enabled (so the panel can be shown/hidden cleanly).
     public bool ShowWidgetsPanel => !FocusModeEnabled && (ShowWeather || ShowStocks || ShowCountdown || ShowNextMeeting
-        || ShowWorldClocks || ShowSystemMonitor || ShowBatteryTime);
+        || ShowWorldClocks || ShowBatteryTime);
     // Secondary widgets surfaced under the status panel in the redesigned expanded island (weather and the
     // system monitor get their own cards, so they're excluded here). Collapses the strip when nothing's on.
-    public bool ShowStatusExtras => ShowBatteryLevel || IsCharging || ShowVisionStatus
+    public bool ShowStatusExtras => ShowBatteryLevel || IsCharging
         || (!FocusModeEnabled && (ShowStocks || ShowCountdown || ShowNextMeeting || ShowWorldClocks))
-        || ShowBatteryTime || ShowPrivacyInUse;
+        || ShowBatteryTime;
 
     // ===== Outer island corner radius (user-chosen via the slider, 0–48 DIP) =====
     private double ClampedCornerRadius => Math.Clamp(Settings.IslandCornerRadius, 0, 48);
@@ -687,9 +683,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool HasNotificationHistory => NotificationHistory.Count > 0;
     public bool ShowEmptyNotificationHistory => !HasNotificationHistory;
 
-    // ===== Unified banner (Windows notification OR volume warning OR AirPods) =====
-    public bool IsAirPodsBannerActive => _airPodsBannerActive && !FocusModeEnabled && !ShowNotification && !(_volumeWarningActive && Settings.VolumeWarningEnabled);
-    public bool ShowBanner => ShowNotification || (_volumeWarningActive && Settings.VolumeWarningEnabled && !FocusModeEnabled) || IsAirPodsBannerActive;
+    // ===== Unified banner (Windows notification, volume warning, or AirPods) =====
+    // Privacy activity has its own attached indicator/drop-down presentation in IslandWindow.
+    public bool IsAirPodsBannerActive => _airPodsBannerActive && !FocusModeEnabled && !ShowNotification
+        && !(_volumeWarningActive && Settings.VolumeWarningEnabled);
+    public bool ShowBanner => ShowNotification || (_volumeWarningActive && Settings.VolumeWarningEnabled && !FocusModeEnabled)
+        || IsAirPodsBannerActive;
     public string BannerApp
     {
         get
@@ -780,10 +779,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     // ===== Behaviour =====
     public bool PinExpanded => KeepExpanded || Settings.AlwaysExpanded;
-    // Live webcam preview shown in the expanded island when the camera is on.
-    public ImageSource? CameraPreview => _cameraPreview;
-    public bool ShowCameraPreview => Settings.VisionEnabled
-        && Vision.Availability == VisionAvailability.Running && _cameraPreview is not null;
     public string MediaTitle => Media.HasSession ? (Media.DisplayTitle ?? "Media") : "No media playing";
     public string MediaArtist => Media.HasSession
         ? string.Join("  |  ", new[] { Media.Artist, Media.SourceAppName }.Where(x => !string.IsNullOrWhiteSpace(x)))
@@ -967,7 +962,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         IsDarkTheme = _themeService.IsDark(Settings.Theme);
         if (Settings.AlwaysExpanded) IsExpanded = true;
         UpdateCachedSettings();
-        UpdatePreviewRetention();
         RaiseSettingsChanged();
         RaisePropertyChanged(nameof(PinExpanded));
         RaisePropertyChanged(nameof(UiFontFamily));
@@ -1185,67 +1179,11 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         if (isAbove && !prevAbove && DateTimeOffset.Now >= _volumeWarnCooldownUntil)
             TriggerVolumeWarning(value.MasterVolumePercent);
     });
-    private void OnVisionChanged(object? sender, VisionState value) => OnUi(() =>
-    {
-        Vision = value;
-        if (value.Availability != VisionAvailability.Running) ClearPreview();
-        UpdatePreviewRetention();
-        RaiseVisionProperties();
-    });
-
-    private void OnVisionFrame(object? sender, byte[] jpeg)
-    {
-        if (!_isExpanded || !Settings.VisionEnabled) return;
-        Interlocked.Exchange(ref _pendingPreviewFrame, jpeg);
-        if (Interlocked.CompareExchange(ref _previewDispatchPending, 1, 0) != 0) return;
-        QueuePreviewFrame();
-    }
-
-    private void QueuePreviewFrame()
-    {
-        try
-        {
-            System.Windows.Application.Current.Dispatcher.BeginInvoke(
-                DispatcherPriority.Render, new Action(ProcessPendingPreviewFrame));
-        }
-        catch
-        {
-            Volatile.Write(ref _previewDispatchPending, 0);
-        }
-    }
-
-    private void ProcessPendingPreviewFrame()
-    {
-        var jpeg = Interlocked.Exchange(ref _pendingPreviewFrame, null);
-        try
-        {
-            if (jpeg is null || !_isExpanded || !Settings.VisionEnabled) return;
-            var image = new BitmapImage();
-            using var stream = new MemoryStream(jpeg);
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.StreamSource = stream;
-            image.EndInit();
-            image.Freeze();
-            _cameraPreview = image;
-        }
-        catch { return; }
-        finally
-        {
-            Volatile.Write(ref _previewDispatchPending, 0);
-            if (Volatile.Read(ref _pendingPreviewFrame) is not null &&
-                Interlocked.CompareExchange(ref _previewDispatchPending, 1, 0) == 0)
-                QueuePreviewFrame();
-        }
-
-        RaisePropertyChanged(nameof(CameraPreview));
-        RaisePropertyChanged(nameof(ShowCameraPreview));
-    }
-
     private void OnWeatherChanged(object? sender, WeatherInfo? value) => OnUi(() =>
     {
         _weather = value;
-        RaiseMany(nameof(ShowWeather), nameof(WeatherGlyph), nameof(WeatherTempText), nameof(WeatherDescText));
+        RaiseMany(nameof(ShowWeather), nameof(WeatherGlyph), nameof(WeatherTempText), nameof(WeatherDescText),
+            nameof(WeatherCityText), nameof(ShowWidgetsPanel));
     });
     private void OnSysStatsChanged(object? sender, SystemStats value) => OnUi(() =>
     {
@@ -1345,8 +1283,12 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     private void OnPrivacyChanged(object? sender, PrivacySensorState value) => OnUi(() =>
     {
+        var changed = value != _privacy;
         _privacy = value;
-        RaiseMany(nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse), nameof(ShowStatusExtras));
+        if (changed && ShowPrivacyInUse) _privacySeq++;
+        RaiseMany(nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse),
+            nameof(PrivacyActivityText), nameof(PrivacyActivityGlyph), nameof(PrivacyIndicatorBrush), nameof(PrivacySeq),
+            nameof(ShowStatusExtras), nameof(ShowWidgetsPanel));
     });
 
     private void TriggerVolumeWarning(int volumePercent)
@@ -1386,23 +1328,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         return h.Length == 6 ? $"#{alpha:X2}{h}" : hex;
     }
 
-    // Ask the service for preview frames only while the expanded island can actually show them.
-    private void UpdatePreviewRetention()
-    {
-        var want = _isExpanded && Settings.VisionEnabled && Vision.Availability == VisionAvailability.Running;
-        if (want == _previewRetained) return;
-        _previewRetained = want;
-        if (want) _visionService.RetainPreview(); else { _visionService.ReleasePreview(); ClearPreview(); }
-    }
-
-    private void ClearPreview()
-    {
-        Interlocked.Exchange(ref _pendingPreviewFrame, null);
-        if (_cameraPreview is null) return;
-        _cameraPreview = null;
-        RaisePropertyChanged(nameof(CameraPreview));
-        RaisePropertyChanged(nameof(ShowCameraPreview));
-    }
     private void OnBatteryChanged(object? sender, BatteryState value) => OnUi(() => { Battery = value; RaiseBatteryProperties(); });
     // Only the time strings change each second — re-raising everything (brushes/geometries) every tick
     // was needless CPU churn (which the system monitor then read back as inflated usage).
@@ -1473,13 +1398,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(ShowCompactArt), nameof(ShowCompactMediaRing), nameof(ShowCompactRingTrack));
     }
 
-    private void RaiseVisionProperties()
-    {
-        RaiseMany(nameof(Vision), nameof(ShowVisionStatus), nameof(VisionStatusText), nameof(VisionDotBrush), nameof(VisionAlert),
-            nameof(ShowVisionButton), nameof(CameraPreview), nameof(ShowCameraPreview),
-            nameof(ShowStatusExtras), nameof(ShowWidgetsPanel));
-    }
-
     private void RaiseThemeProperties()
     {
         RaiseMany(nameof(PrimaryTextBrush), nameof(SecondaryTextBrush), nameof(AccentTextBrush), nameof(PanelBrush),
@@ -1497,7 +1415,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseMany(nameof(FocusModeEnabled), nameof(FocusModeText),
             nameof(ShowWeather), nameof(ShowSystemMonitor), nameof(ShowCountdown), nameof(ShowStocks), nameof(ShowWorldClocks),
             nameof(ShowNextMeeting), nameof(ShowQuickLaunch), nameof(ShowBatteryTime), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
-            nameof(ShowNotification), nameof(ShowBanner), nameof(IsAirPodsBannerActive), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(ShowAirPods), nameof(ShowAirPodsCard));
+            nameof(ShowNotification), nameof(ShowBanner), nameof(IsAirPodsBannerActive),
+            nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody), nameof(ShowAirPods), nameof(ShowAirPodsCard));
     }
 
     private void RaiseAirPodsProperties()
@@ -1569,7 +1488,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(MediaColumn), nameof(VolumeColumn), nameof(StatusColumn), nameof(InterfaceScaleFactor),
             nameof(ClockFontSize), nameof(DateFontSize), nameof(BatteryGlyphFontSize), nameof(BatteryTextFontSize),
             nameof(ChargingGlyphFontSize), nameof(ChargingTextFontSize), nameof(CompactChargingTextFontSize),
-            nameof(MediaTitleFontSize), nameof(MediaArtistFontSize), nameof(VolumeFontSize), nameof(VisionTextFontSize),
+            nameof(MediaTitleFontSize), nameof(MediaArtistFontSize), nameof(VolumeFontSize),
             nameof(CompactGlyphFontSize), nameof(CompactPrimaryFontSize), nameof(CompactSecondaryFontSize), nameof(CompactClockFontSize),
             nameof(ExpandedMediaTitleFontSize), nameof(ExpandedMediaArtistFontSize));
     }
@@ -1583,11 +1502,11 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseMediaPresentationChanged();
         RaiseAudioProperties();
         RaiseBatteryProperties();
-        RaiseVisionProperties();
         RaiseFocusModeProperties();
         RaiseMany(nameof(ShowClock), nameof(ShowDate), nameof(ShowTimerAlarm), nameof(DebugOverlay), nameof(IsReducedMotion),
-            nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse),
-            nameof(ShowWeather), nameof(WeatherGlyph), nameof(WeatherTempText), nameof(WeatherDescText),
+            nameof(ShowCameraInUse), nameof(ShowMicInUse), nameof(ShowPrivacyInUse), nameof(PrivacyActivityText), nameof(PrivacyActivityGlyph),
+            nameof(PrivacyIndicatorBrush),
+            nameof(ShowWeather), nameof(WeatherGlyph), nameof(WeatherTempText), nameof(WeatherDescText), nameof(WeatherCityText),
             nameof(ShowSystemMonitor), nameof(ShowCompactRam), nameof(CpuText), nameof(RamText), nameof(NetText),
             nameof(RamPercentValue), nameof(NetSparkline), nameof(ShowCountdown), nameof(CountdownText),
             nameof(ShowWorldClocks), nameof(WorldClocks), nameof(ShowQuotes), nameof(ShowQuoteInCompact), nameof(ShowQuoteInExpanded),
@@ -1595,7 +1514,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(QuoteTextFontSize), nameof(QuoteAuthorFontSize), nameof(ShowStocks), nameof(Stocks),
             nameof(ShowNextMeeting), nameof(MeetingTitle), nameof(MeetingWhen), nameof(HasMeetingJoin),
             nameof(ShowBatteryTime), nameof(BatteryTimeText), nameof(ShowQuickLaunch), nameof(LaunchItems),
-            nameof(ShowNotification), nameof(ShowBanner), nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
+            nameof(ShowNotification), nameof(ShowBanner), nameof(IsAirPodsBannerActive),
+            nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody),
+            nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(ShowStatusExtras),
             nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(PinExpanded), nameof(ScrollTitles));
         RaiseMediaCommandsCanExecute();
         (ToggleMuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -1773,8 +1694,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         _mediaService.Changed -= OnMediaChanged;
         _audioService.Changed -= OnAudioChanged;
-        _visionService.Changed -= OnVisionChanged;
-        _visionService.FrameReady -= OnVisionFrame;
         _weatherService.Changed -= OnWeatherChanged;
         _systemMonitorService.Changed -= OnSysStatsChanged;
         _spectrumService.BandsChanged -= OnSpectrumChanged;
@@ -1786,7 +1705,6 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _volumeWarningTimer.Stop();
         _airPodsBannerTimer.Stop();
         _quoteTimer.Stop();
-        if (_previewRetained) { _visionService.ReleasePreview(); _previewRetained = false; }
         _batteryService.Changed -= OnBatteryChanged;
         _clockService.Tick -= OnClockTick;
         _timerAlarmService.Changed -= OnTimerAlarmChanged;

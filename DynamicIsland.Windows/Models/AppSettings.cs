@@ -53,14 +53,6 @@ public sealed class AppSettings
     public bool ShowInAltTab { get; set; }
     public int CollapseDelayMilliseconds { get; set; } = 400;
     public int TopOffset { get; set; } = 2; // gap (DIP) from the top of the screen to the pill
-    // Camera "vision" feature — off by default. Opens the webcam only while enabled.
-    public bool VisionEnabled { get; set; }
-    public bool VisionPrivacyMode { get; set; } // recognise the enrolled owner ("Just you" vs "Unknown person")
-    public bool VisionModelsConsented { get; set; } // user agreed to download the detection models
-    public bool ShowVisionStatus { get; set; } = true;
-    public int VisionTargetFps { get; set; } = 7;
-    public int VisionCameraIndex { get; set; }
-    public double VisionFaceMatchThreshold { get; set; } = 0.363; // SFace cosine match threshold
     public double? ManualLeftPixels { get; set; }
     public double? ManualTopPixels { get; set; }
     public string? ManualMonitorDeviceName { get; set; }
@@ -74,7 +66,6 @@ public sealed class AppSettings
     public int MediaTitleSize { get; set; } = 100;
     public int MediaArtistSize { get; set; } = 100;
     public int VolumeSize { get; set; } = 100;
-    public int VisionTextSize { get; set; } = 100;
     public int CompactTextSize { get; set; } = 100;
 
     // ===== Colours & font =====
@@ -105,12 +96,6 @@ public sealed class AppSettings
     public bool ShowSystemMonitor { get; set; }
     public bool ShowRamInCompact { get; set; } // show RAM usage on the collapsed (compact) island
     public bool RealAudioSpectrum { get; set; }
-
-    // ===== Camera automations =====
-    public bool AutoLockOnUnknown { get; set; }
-    public int AutoLockDelaySeconds { get; set; } = 8;
-    public bool PresenceAwareMedia { get; set; }
-    public bool PrivacyAutoBlur { get; set; }
 
     // ===== Layout order (csv of: media,volume,status) =====
     public string ExpandedOrder { get; set; } = "media,volume,status";

@@ -14,10 +14,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The decision policy is pure (no OpenCV/WPF), so we link the sources instead of referencing the
-         WPF app — keeps the test host light and avoids pulling native OpenCV into the runner. -->
-    <Compile Include="..\DynamicIsland.Windows\Models\VisionPolicy.cs" Link="VisionPolicy.cs" />
-    <Compile Include="..\DynamicIsland.Windows\Models\VisionState.cs" Link="VisionState.cs" />
     <Compile Include="..\DynamicIsland.Windows\Infrastructure\SeekMath.cs" Link="SeekMath.cs" />
     <Compile Include="..\DynamicIsland.Windows\Models\TimerAlarmState.cs" Link="TimerAlarmState.cs" />
     <Compile Include="..\DynamicIsland.Windows\Models\RecurrenceRule.cs" Link="RecurrenceRule.cs" />

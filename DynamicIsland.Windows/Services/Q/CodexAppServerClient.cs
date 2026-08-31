@@ -164,10 +164,8 @@ public sealed class CodexAppServerClient : IAsyncDisposable
         await StartAsync(cancellationToken).ConfigureAwait(false);
         var workspace = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DynamicIsland.Windows", "CodexWorkspace");
         Directory.CreateDirectory(workspace);
-        var thread = await SendRequestAsync("thread/start", new
-        {
-            model, cwd = workspace, approvalPolicy = "never", sandbox = "readOnly", serviceName = "dynamic_island_q"
-        }, cancellationToken).ConfigureAwait(false);
+        var thread = await SendRequestAsync("thread/start",
+            CodexTurnStartRequest.CreateThread(model, workspace), cancellationToken).ConfigureAwait(false);
         var threadId = String(thread.GetProperty("thread"), "id")
             ?? throw new CodexAppServerException(CodexFailureKind.Protocol, "Codex did not return a thread id.");
         _threadLedger.Add(threadId);

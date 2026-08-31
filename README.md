@@ -120,14 +120,14 @@ references under `media/legacy/` and are no longer used as the README hero.
 - **ChatGPT / Codex for Q** - sign in through the official Codex device-code flow
   and use eligible Codex subscription limits without an OpenAI API key. The
   existing API-key providers remain available and unchanged.
-- **Quick actions** — camera presence, timer, settings, collapse, and a menu, as
+- **Quick actions** — timer, settings, collapse, and a menu, as
   one row of equal circular buttons.
 - **System integration** — per-monitor-V2 DPI aware, multi-monitor aware,
   single-instance, hidden from Alt-Tab, optional launch-on-startup, optional
   click-through when compact, reduced-motion support, full light/dark theming, and
   a tray menu.
 - **Privacy-first** — no analytics or accounts. The app makes network requests
-  only for optional weather, one-time camera-model downloads, and Q provider
+  only for optional weather and Q provider
   requests when Q is explicitly invoked. Q credentials use Windows user-scoped
   DPAPI storage and captured context stays in memory for the current session.
 
@@ -268,7 +268,7 @@ workflow and [`design-qa.md`](design-qa.md) for visual validation notes.
 
 Before the native rewrite, the island went through many Python/Tkinter
 explorations — different shapes, dock positions, an animated progress ring, a
-premium build, and an optional camera-presence version. They're all kept, with a
+and premium builds. They're all kept, with a
 guide to each, in **[`python-versions/`](python-versions/)**.
 
 ---

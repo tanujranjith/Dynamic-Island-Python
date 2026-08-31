@@ -90,9 +90,6 @@ public sealed class SettingsService(LoggingService log)
         if (settings.DefaultPosition == PositionMode.Manual &&
             (settings.ManualLeftPixels is null || settings.ManualTopPixels is null))
             settings.DefaultPosition = PositionMode.TopCenter;
-        settings.VisionTargetFps = Math.Clamp(settings.VisionTargetFps, 3, 15);
-        settings.VisionCameraIndex = Math.Max(0, settings.VisionCameraIndex);
-        settings.VisionFaceMatchThreshold = Math.Clamp(settings.VisionFaceMatchThreshold, 0.2, 0.6);
         settings.InterfaceScale = Math.Clamp(settings.InterfaceScale, 70, 150);
         settings.ClockSize = Math.Clamp(settings.ClockSize, 60, 160);
         settings.DateSize = Math.Clamp(settings.DateSize, 60, 160);
@@ -100,11 +97,9 @@ public sealed class SettingsService(LoggingService log)
         settings.MediaTitleSize = Math.Clamp(settings.MediaTitleSize, 60, 160);
         settings.MediaArtistSize = Math.Clamp(settings.MediaArtistSize, 60, 160);
         settings.VolumeSize = Math.Clamp(settings.VolumeSize, 60, 160);
-        settings.VisionTextSize = Math.Clamp(settings.VisionTextSize, 60, 160);
         settings.CompactTextSize = Math.Clamp(settings.CompactTextSize, 60, 160);
         settings.AlbumCornerRadius = Math.Clamp(settings.AlbumCornerRadius, 0, 30);
         settings.IdleOpacityPercent = Math.Clamp(settings.IdleOpacityPercent, 20, 100);
-        settings.AutoLockDelaySeconds = Math.Clamp(settings.AutoLockDelaySeconds, 2, 60);
         if (string.IsNullOrWhiteSpace(settings.AccentColorHex)) settings.AccentColorHex = "#5AA7FF";
         if (string.IsNullOrWhiteSpace(settings.FontFamilyName)) settings.FontFamilyName = "Segoe UI Variable Text";
         if (string.IsNullOrWhiteSpace(settings.ExpandedOrder)) settings.ExpandedOrder = "media,volume,status";

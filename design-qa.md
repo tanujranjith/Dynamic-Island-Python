@@ -1,0 +1,93 @@
+# Design QA — privacy Live Activity and compact accessory row
+
+## Evidence
+
+- Source visual truth:
+  - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\privacy-detached.png`
+  - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\privacy-text-card-after-first-fix.png`
+  - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\privacy-dot-compact-confirmed.png`
+  - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\airpods-widgets-stacked-before-row-fix.png`
+  - `C:\Users\tanuj.DESKTOP-BOL1R68.000\desktop\dyamic island\.codex-reference\expanded-floating-privacy-dot-before-live-activity.png`
+- Source pixels:
+  - Detached privacy screenshot: 742 × 681
+  - First-fix privacy screenshot: 516 × 169
+  - Confirmed compact-dot screenshot: 364 × 165
+  - Stacked accessory-row screenshot: 962 × 209
+  - Expanded floating-dot screenshot: 1276 × 490
+- Latest implementation screenshot: unavailable after the current rebuild
+- Implementation viewport: native transparent WPF window with a 1200-DIP canvas
+- Density normalization: not possible until a post-fix native capture is available
+- Target state: expanded Apple-style island with camera active
+
+## Intended visual behavior
+
+- Compact mode shows only the 8-DIP green/orange recording light inside its 18-DIP trailing orb.
+- Expanded mode replaces the outside orb with a 26-DIP inline Live Activity beneath the top-right controls.
+- The expanded activity contains the semantic sensor dot, the live sensor state, and a short `LIVE` marker.
+- Sensor activation while expanded uses a 260 ms scale/slide and 180 ms fade.
+- AirPods and live widgets remain distinct cards in one 64-DIP horizontal accessory lane.
+
+The layout follows Apple's guidance to preserve information between compact and expanded presentations, keep content snug, avoid notification-style layouts, and animate existing live information into its new position.
+
+## Comparison history
+
+### Pass 1 — detached privacy notification
+
+- [P1] Privacy notification was detached in the middle of the desktop.
+  - Fix: removed privacy from the generic banner.
+
+### Pass 2 — attached text card
+
+- [P1] The attached privacy disclosure still read as a large notification.
+  - Evidence: `privacy-text-card-after-first-fix.png`.
+  - Fix: removed the disclosure and reduced compact privacy to a trailing recording orb.
+
+### Pass 3 — compact dot
+
+- User evidence: `privacy-dot-compact-confirmed.png` confirms the compact dot-only treatment.
+- [P1] The orb initially disappeared in expanded mode.
+  - Fix: kept sensor activity visible while moving the orb to the expanded shell edge.
+
+### Pass 4 — accessory-row density
+
+- [P1] AirPods and weather occupied two stacked full-width rows.
+  - Evidence: `airpods-widgets-stacked-before-row-fix.png`.
+  - Fix: combined them into one row as separate cards and reduced height reservation to one lane.
+
+### Pass 5 — expanded state confirmation
+
+- User evidence: `expanded-floating-privacy-dot-before-live-activity.png`.
+- AirPods and weather are visibly separate, aligned on one row, and not clipped.
+- [P1] The privacy orb remained detached from the expanded content and did not read as a Live Activity.
+  - Fix: made the outside orb compact-only and added a snug inline activity beneath the expanded controls.
+
+### Pass 6 — current implementation
+
+- Release build: succeeded with zero warnings and zero errors.
+- Automated tests: 97 passed, 0 failed, 0 skipped.
+- Root app: republished and relaunched successfully as process 16712.
+- Post-fix visual evidence: pending a same-state expanded screenshot.
+
+## Required fidelity surfaces
+
+- Fonts and typography: the inline activity uses the existing Segoe UI Variable hierarchy at 10.5 and 8 DIP with semibold/bold optical contrast; post-fix capture is pending.
+- Spacing and layout rhythm: the activity fits the existing fixed 64-DIP header region and does not add shell height; its final alignment requires capture.
+- Colors and visual tokens: the opaque dark activity surface, subtle keyline, Apple green camera state, and Apple orange microphone state follow existing tokens.
+- Image quality and asset fidelity: no new imagery was required; the confirmed AirPods raster remains sharp and uniformly scaled.
+- Copy and content: compact privacy is text-free; expanded privacy exposes only the sensor state and `LIVE`, without inventing an app identity.
+
+## Findings
+
+- [P1] The rebuilt inline Live Activity has not been captured.
+  - Location: expanded Apple-style header beneath the top-right controls.
+  - Evidence: the pre-fix screenshot shows the detached orb, while the new build and process evidence do not show the revised pixels.
+  - Impact: final pill width, truncation, control clearance, and motion endpoint cannot yet be visually certified.
+  - Fix: capture the expanded camera-active state and compare it directly with the pre-fix expanded screenshot.
+
+## Implementation checklist
+
+- Capture the expanded camera-active state.
+- Confirm the outside orb is absent.
+- Confirm the inline activity is snug, legible, and clear of the controls and progress bar.
+
+final result: blocked

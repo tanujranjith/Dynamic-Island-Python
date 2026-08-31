@@ -53,13 +53,6 @@ public static class ViewModelNotificationGroups
         "ShowCompactArt", "ShowCompactMediaRing", "ShowCompactRingTrack"
     };
 
-    public static readonly IReadOnlySet<string> VisionProperties = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "Vision", "ShowVisionStatus", "VisionStatusText", "VisionDotBrush", "VisionAlert",
-        "ShowVisionButton", "CameraPreview", "ShowCameraPreview",
-        "ShowStatusExtras", "ShowWidgetsPanel"
-    };
-
     public static readonly IReadOnlySet<string> ThemeProperties = new HashSet<string>(StringComparer.Ordinal)
     {
         "PrimaryTextBrush", "SecondaryTextBrush", "AccentTextBrush", "PanelBrush",

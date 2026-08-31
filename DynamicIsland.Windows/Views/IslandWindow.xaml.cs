@@ -36,6 +36,7 @@ public partial class IslandWindow : Window
     private bool _liveTimerVisible;
     private bool _lastIsStatsStyle;
     private bool _lastShowAirPodsCard;
+    private bool _lastShowWidgetsPanel;
     private Storyboard? _qThinkingAnimation;
     private bool _qFollowLatest = true;
 
@@ -44,7 +45,6 @@ public partial class IslandWindow : Window
     private const double LiveTimerExtraHeight = 86d;
 
     public event EventHandler? OpenSettingsRequested;
-    public event EventHandler? OpenVisionRequested;
     public event EventHandler? OpenClipboardRequested;
     public event EventHandler? RecenterRequested;
 
@@ -59,6 +59,7 @@ public partial class IslandWindow : Window
         LiveTimerStrip.Visibility = _liveTimerVisible ? Visibility.Visible : Visibility.Collapsed;
         _lastIsStatsStyle = viewModel.IsStatsStyle;
         _lastShowAirPodsCard = viewModel.ShowAirPodsCard;
+        _lastShowWidgetsPanel = viewModel.ShowWidgetsPanel;
         _position = position;
         _settingsService = settingsService;
         _log = log;
@@ -246,6 +247,15 @@ public partial class IslandWindow : Window
             // expansion must not inherit the smaller host height that was calculated at startup.
             ApplyLayout(animate: _viewModel.IsExpanded);
         }
+        else if (e.PropertyName == nameof(IslandViewModel.ShowWidgetsPanel))
+        {
+            var showWidgetsPanel = _viewModel.ShowWidgetsPanel;
+            if (showWidgetsPanel == _lastShowWidgetsPanel) return;
+            _lastShowWidgetsPanel = showWidgetsPanel;
+            if (_timerPanelOpen) return;
+            ApplyVisualMode();
+            ApplyLayout(animate: _viewModel.IsExpanded);
+        }
         else if (e.PropertyName == nameof(IslandViewModel.IsAirPodsBannerActive))
         {
             if (_viewModel.IsAirPodsBannerActive) PlayAirPodsConnectionIntro();
@@ -260,9 +270,13 @@ public partial class IslandWindow : Window
                 UpdateQThinkingAnimation();
             ScheduleQTranscriptScroll();
         }
+        else if (e.PropertyName == nameof(IslandViewModel.PrivacySeq))
+        {
+            Dispatcher.BeginInvoke(PlayPrivacyDotIntro, DispatcherPriority.Render);
+        }
         else if (e.PropertyName == nameof(IslandViewModel.BannerSeq))
         {
-            // BannerSeq increments once per new banner event (Windows notification or volume warning),
+            // BannerSeq increments once per new Windows notification or volume warning,
             // so the entrance plays exactly once and never restarts mid-display.
             PlayNotificationIntro();
         }
@@ -281,6 +295,62 @@ public partial class IslandWindow : Window
     }
 
     private Storyboard? _notifIntro;
+
+    private void PlayPrivacyDotIntro()
+    {
+        if (!_viewModel.ShowPrivacyInUse) return;
+
+        if (_viewModel.IsExpanded)
+        {
+            PlayExpandedPrivacyActivityIntro();
+            return;
+        }
+
+        PrivacyDotScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        PrivacyDotScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+
+        if (_viewModel.IsReducedMotion)
+        {
+            PrivacyDotScale.ScaleX = PrivacyDotScale.ScaleY = 1d;
+            return;
+        }
+
+        var reveal = TimeSpan.FromMilliseconds(260);
+        var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 };
+        PrivacyDotScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.25d, 1d, reveal) { EasingFunction = spring });
+        PrivacyDotScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.25d, 1d, reveal) { EasingFunction = spring });
+    }
+
+    private void PlayExpandedPrivacyActivityIntro()
+    {
+        ExpandedPrivacyActivity.BeginAnimation(UIElement.OpacityProperty, null);
+        ExpandedPrivacyScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        ExpandedPrivacyScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        ExpandedPrivacyTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+
+        if (_viewModel.IsReducedMotion)
+        {
+            ExpandedPrivacyActivity.Opacity = 1d;
+            ExpandedPrivacyScale.ScaleX = ExpandedPrivacyScale.ScaleY = 1d;
+            ExpandedPrivacyTranslate.X = 0d;
+            return;
+        }
+
+        var duration = TimeSpan.FromMilliseconds(260);
+        var ease = new QuinticEase { EasingMode = EasingMode.EaseOut };
+        ExpandedPrivacyActivity.BeginAnimation(
+            UIElement.OpacityProperty,
+            new DoubleAnimation(0d, 1d, TimeSpan.FromMilliseconds(180)));
+        ExpandedPrivacyScale.BeginAnimation(
+            ScaleTransform.ScaleXProperty,
+            new DoubleAnimation(0.96d, 1d, duration) { EasingFunction = ease });
+        ExpandedPrivacyScale.BeginAnimation(
+            ScaleTransform.ScaleYProperty,
+            new DoubleAnimation(0.96d, 1d, duration) { EasingFunction = ease });
+        ExpandedPrivacyTranslate.BeginAnimation(
+            TranslateTransform.XProperty,
+            new DoubleAnimation(12d, 0d, duration) { EasingFunction = ease });
+    }
 
     private void PlayAirPodsConnectionIntro()
     {
@@ -385,9 +455,8 @@ public partial class IslandWindow : Window
         var timerSpace = _liveTimerVisible ? LiveTimerExtraHeight : 0d;
         var statsSpace = _viewModel.IsStatsStyle ? StatsDashboardExtraHeight : 0d;
         var qSpace = _viewModel.ShowQSurface ? QSurfaceExtraHeight : 0d;
-        // The card contains three text lines and scales with the user's interface setting.
-        // Reserve its full minimum height, top margin, and a little breathing room.
-        var airPodsSpace = _viewModel.ShowAirPods ? 76d : 0d;
+        // AirPods and widgets now share one 64-DIP accessory lane.
+        var accessorySpace = _viewModel.ShowAirPodsCard || _viewModel.ShowWidgetsPanel ? 76d : 0d;
         // Compact dimensions are user-controlled and deliberately independent from the expanded
         // canvas.  Previously this method ignored IslandWidth/IslandHeight and used a preset for
         // both states, so adjusting the mini island could distort the expanded layout.
@@ -398,9 +467,9 @@ public partial class IslandWindow : Window
             // The media header, transport controls, and the live-activity cards need 260px+
             // after their outer margins.  The smaller values clipped the entire bottom row,
             // making RAM/network/battery appear to have disappeared.
-            IslandSize.Compact => (820d, 264d + quoteSpace + timerSpace + statsSpace + qSpace + airPodsSpace),
-            IslandSize.Large => (1000d, 322d + quoteSpace + timerSpace + statsSpace + qSpace + airPodsSpace),
-            _ => (900d, 292d + quoteSpace + timerSpace + statsSpace + qSpace + airPodsSpace)
+            IslandSize.Compact => (820d, 264d + quoteSpace + timerSpace + statsSpace + qSpace + accessorySpace),
+            IslandSize.Large => (1000d, 322d + quoteSpace + timerSpace + statsSpace + qSpace + accessorySpace),
+            _ => (900d, 292d + quoteSpace + timerSpace + statsSpace + qSpace + accessorySpace)
         };
         // The transparent HWND must be at least as tall as the pill, otherwise WPF clips
         // a correctly measured Stats dashboard at the canvas boundary.
@@ -467,6 +536,7 @@ public partial class IslandWindow : Window
         ApplyVisualMode();
         var m = Metrics();
         UpdateTimerOrbLayout(m.cW, m.cH);
+        UpdatePrivacyIndicatorLayout(m.cW, m.cH, animate);
         var desiredWindowHeight = _timerPanelOpen ? Math.Max(m.winH, TimerPanelHeight + 20d) : m.winH;
         if (Math.Abs(Width - m.winW) > 0.5 || Math.Abs(Height - desiredWindowHeight) > 0.5)
         {
@@ -483,6 +553,40 @@ public partial class IslandWindow : Window
         CompactTimerOrb.Width = size;
         CompactTimerOrb.Height = size;
         TimerOrbTranslate.X = compactWidth / 2d + 8d + size / 2d;
+    }
+
+    private void UpdatePrivacyIndicatorLayout(double compactWidth, double compactHeight, bool animate)
+    {
+        var (activeWidth, activeHeight) = _timerPanelOpen
+            ? (TimerPanelWidth, TimerPanelHeight)
+            : _viewModel.IsExpanded
+                ? ExpandedPillSize()
+                : (compactWidth, compactHeight);
+
+        // Follow the shell's trailing edge. Expanded mode keeps the orb near the top controls.
+        var targetX = activeWidth / 2d + 12d;
+        var targetY = _viewModel.IsExpanded || _timerPanelOpen
+            ? 12d
+            : Math.Max(0d, (activeHeight - 18d) / 2d);
+
+        PrivacyDotTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+        PrivacyDotTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+        if (!animate || _viewModel.IsReducedMotion)
+        {
+            PrivacyDotTranslate.X = targetX;
+            PrivacyDotTranslate.Y = targetY;
+            return;
+        }
+
+        var duration = TimeSpan.FromMilliseconds(
+            _viewModel.Settings.AnimationIntensity == AnimationIntensity.Expressive ? 340d : 250d);
+        var ease = new QuinticEase { EasingMode = EasingMode.EaseOut };
+        PrivacyDotTranslate.BeginAnimation(
+            TranslateTransform.XProperty,
+            new DoubleAnimation(targetX, duration) { EasingFunction = ease });
+        PrivacyDotTranslate.BeginAnimation(
+            TranslateTransform.YProperty,
+            new DoubleAnimation(targetY, duration) { EasingFunction = ease });
     }
 
     private void ApplyVisualMode()
@@ -757,8 +861,7 @@ public partial class IslandWindow : Window
             var self = new System.Windows.Interop.WindowInteropHelper(this).Handle;
             if (fg != nint.Zero && fg != self && fg != Interop.NativeMethods.GetShellWindow() && !IsDesktopOrShell(fg))
             {
-                // Never hide for one of OUR OWN windows (settings, camera, the privacy-blur overlay — which
-                // is itself fullscreen and would otherwise make the island vanish).
+                // Never hide for one of our own windows, such as Settings.
                 Interop.NativeMethods.GetWindowThreadProcessId(fg, out var pid);
                 if (pid != (uint)Environment.ProcessId && Interop.NativeMethods.GetWindowRect(fg, out var r))
                 {
@@ -956,9 +1059,8 @@ public partial class IslandWindow : Window
         e.Handled = true;
     }
 
-    private void VisionButton_Click(object sender, RoutedEventArgs e) => OpenVisionRequested?.Invoke(this, EventArgs.Empty);
     private void ClipboardButton_Click(object sender, RoutedEventArgs e) => OpenClipboardRequested?.Invoke(this, EventArgs.Empty);
-    private void JoinMeeting_Click(object sender, MouseButtonEventArgs e) { _viewModel.OpenMeetingCommand.Execute(null); e.Handled = true; }
+    private void JoinMeeting_Click(object sender, RoutedEventArgs e) { _viewModel.OpenMeetingCommand.Execute(null); e.Handled = true; }
     private void TimerButton_Click(object sender, RoutedEventArgs e)
     {
         ShowTimerPanel();

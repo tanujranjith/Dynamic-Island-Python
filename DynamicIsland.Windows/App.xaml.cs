@@ -2,7 +2,6 @@ using System.Threading;
 using System.Windows;
 using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
-using DynamicIsland.Windows.Services.Vision;
 using DynamicIsland.Windows.ViewModels;
 using DynamicIsland.Windows.Views;
 using DynamicIsland.Windows.Services.Q;
@@ -26,8 +25,6 @@ public partial class App : System.Windows.Application
     private TimerAlarmService? _timerAlarm;
     private ThemeService? _theme;
     private AirPodsService? _airPods;
-    private VisionModelManager? _visionModels;
-    private VisionService? _vision;
     private WeatherService? _weather;
     private SystemMonitorService? _sysMon;
     private AudioSpectrumService? _spectrum;
@@ -43,14 +40,10 @@ public partial class App : System.Windows.Application
     private SettingsViewModel? _settingsViewModel;
     private IslandWindow? _islandWindow;
     private SettingsWindow? _settingsWindow;
-    private VisionSettingsWindow? _visionWindow;
     private TimerAlarmViewModel? _timerViewModel;
     private TrayService? _tray;
     private AppSettings? _settings;
     private bool _isShuttingDown;
-    private System.Windows.Threading.DispatcherTimer? _autoLockTimer;
-    private bool _autoPausedMedia;
-    private Window? _privacyBlur;
     private ScreenContextService? _qScreen;
     private SpeechInputService? _qSpeech;
     private DpapiSecretStore? _qSecrets;
@@ -116,8 +109,6 @@ public partial class App : System.Windows.Application
         _theme = new ThemeService();
         ApplyGlobalTheme();
         _theme.SystemThemeChanged += (_, _) => Dispatcher.BeginInvoke(ApplyGlobalTheme);
-        _visionModels = new VisionModelManager(_log);
-        _vision = new VisionService(_log, _visionModels);
         _airPods = new AirPodsService(_log);
         _weather = new WeatherService(_log);
         _sysMon = new SystemMonitorService();
@@ -139,24 +130,21 @@ public partial class App : System.Windows.Application
             new CodexQProvider(_codexClient)
         ]);
         _qSession = new QSessionController(providers);
-        _vision.Changed += (_, state) => Dispatcher.BeginInvoke(() => HandleVisionAutomations(state));
         _battery.LowBattery += (_, pct) => Dispatcher.BeginInvoke(() =>
             _tray?.ShowNotification("Battery low", $"{pct}% remaining — plug in soon."));
         _position = new WindowPositionService();
         _islandViewModel = new IslandViewModel(_settings, _media, _audio, _battery, _clock, _timerAlarm, _theme,
-            _vision, _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy, _notificationHistory,
+            _weather, _sysMon, _spectrum, _stocks, _calendar, _notifications, _privacy, _notificationHistory,
             _qSession, _qScreen, _qSpeech, _qSecrets, _codexAccount, _airPods);
         _timerViewModel = new TimerAlarmViewModel(_timerAlarm, _settings.Use24HourClock);
         _islandWindow = new IslandWindow(_islandViewModel, _timerViewModel, _position, _settingsService, _log, _qScreen);
         _islandWindow.OpenSettingsRequested += (_, _) => ShowSettings();
-        _islandWindow.OpenVisionRequested += (_, _) => ShowVisionSettings();
         _islandWindow.OpenClipboardRequested += (_, _) => _ = ShowClipboardAsync();
         _islandWindow.RecenterRequested += (_, _) => Recenter();
         _islandWindow.Closed += (_, _) => { if (!_isShuttingDown) ShutdownApplication(); };
 
         _settingsViewModel = new SettingsViewModel(_settings, _settingsService, _startupService,
-            _vision, _visionModels, ApplySettings, Recenter, () => _settingsWindow?.Hide(), _qSecrets, providers, _codexAccount);
-        _settingsViewModel.OpenVisionPage = ShowVisionSettings;
+            ApplySettings, Recenter, () => _settingsWindow?.Hide(), _qSecrets, providers, _codexAccount);
         _media.AvailableAppsChanged += (_, apps) => Dispatcher.BeginInvoke(() =>
             _settingsViewModel.SetAvailableApps(apps));
 
@@ -187,7 +175,6 @@ public partial class App : System.Windows.Application
         _timerAlarm.Start();
         _privacy.Start();
         _airPods?.Start();
-        ApplyVisionSettings();
         _weather.Start();
         _stocks.Start();
         ApplyLiveActivitySettings();
@@ -225,26 +212,6 @@ public partial class App : System.Windows.Application
         FadeIn(_settingsWindow);
     }
 
-    private void ShowVisionSettings()
-    {
-        if (_settingsViewModel is null) return;
-        if (_visionWindow is null)
-        {
-            _visionWindow = new VisionSettingsWindow(_settingsViewModel);
-            _visionWindow.IsVisibleChanged += (_, _) => UpdateKeepExpanded();
-            _visionWindow.Closing += (_, args) =>
-            {
-                if (_isShuttingDown) return;
-                args.Cancel = true;
-                _ = _settingsViewModel.SaveAsync(false);
-                _visionWindow.Hide();
-            };
-        }
-        _visionWindow.Show();
-        _visionWindow.Activate();
-        FadeIn(_visionWindow);
-    }
-
     private static void FadeIn(Window window)
     {
         window.Opacity = 0;
@@ -275,20 +242,8 @@ public partial class App : System.Windows.Application
         ApplyGlobalTheme();
         _islandViewModel?.ApplySettings();
         _islandWindow?.ApplySettings();
-        ApplyVisionSettings();
         ApplyLiveActivitySettings();
         _tray?.SyncChecks();
-    }
-
-    // Transition-based: only opens/closes the camera when the enabled flag actually flips, so unrelated
-    // settings changes don't restart the webcam loop.
-    private void ApplyVisionSettings()
-    {
-        if (_vision is null || _settings is null) return;
-        _vision.Configure(_settings.VisionPrivacyMode, _settings.VisionTargetFps,
-            _settings.VisionCameraIndex, _settings.VisionFaceMatchThreshold);
-        if (_settings.VisionEnabled && !_vision.IsRunning) _vision.Start();
-        else if (!_settings.VisionEnabled && _vision.IsRunning) _vision.Stop();
     }
 
     private bool _calendarStarted, _notificationsStarted;
@@ -305,65 +260,6 @@ public partial class App : System.Windows.Application
         if (_settings.ShowNextMeeting && !_calendarStarted) { _calendarStarted = true; _ = _calendar!.StartAsync(); }
         if (_settings.ShowNotifications && !_notificationsStarted) { _notificationsStarted = true; _ = _notifications!.StartAsync(); }
     }
-
-    // Camera-driven automations: lock on unknown, presence-aware media, privacy blur.
-    private void HandleVisionAutomations(Models.VisionState s)
-    {
-        if (_settings is null) return;
-        var running = s.Availability == VisionAvailability.Running;
-        var unknown = running && s.PrivacyOn && s.Enrolled && s.Alert;
-
-        if (_settings.AutoLockOnUnknown && unknown)
-        {
-            if (_autoLockTimer is null)
-            {
-                _autoLockTimer = new System.Windows.Threading.DispatcherTimer();
-                _autoLockTimer.Tick += (_, _) => { _autoLockTimer!.Stop(); Interop.NativeMethods.LockWorkStation(); };
-            }
-            if (!_autoLockTimer.IsEnabled)
-            {
-                _autoLockTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(_settings.AutoLockDelaySeconds, 2, 60));
-                _autoLockTimer.Start();
-            }
-        }
-        else _autoLockTimer?.Stop();
-
-        if (_settings.PrivacyAutoBlur && unknown) ShowPrivacyBlur(); else HidePrivacyBlur();
-
-        if (_settings.PresenceAwareMedia && running && _media is not null)
-        {
-            var nobody = s.PeopleCount == 0;
-            if (nobody && !_autoPausedMedia && _media.Current.IsPlaying)
-            { _ = _media.TogglePlayPauseAsync(); _autoPausedMedia = true; }
-            else if (!nobody && _autoPausedMedia)
-            { if (!_media.Current.IsPlaying) _ = _media.TogglePlayPauseAsync(); _autoPausedMedia = false; }
-        }
-    }
-
-    private void ShowPrivacyBlur()
-    {
-        if (_privacyBlur is null)
-        {
-            _privacyBlur = new Window
-            {
-                WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, WindowState = WindowState.Maximized,
-                Topmost = true, ShowInTaskbar = false, AllowsTransparency = true,
-                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(235, 8, 10, 16)),
-                Content = new System.Windows.Controls.TextBlock
-                {
-                    Text = "Privacy mode\nUnknown person detected — click to dismiss",
-                    Foreground = System.Windows.Media.Brushes.White, FontSize = 22,
-                    TextAlignment = TextAlignment.Center,
-                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
-                    VerticalAlignment = System.Windows.VerticalAlignment.Center
-                }
-            };
-            _privacyBlur.MouseDown += (_, _) => _privacyBlur!.Hide();
-        }
-        if (!_privacyBlur.IsVisible) _privacyBlur.Show();
-    }
-
-    private void HidePrivacyBlur() { if (_privacyBlur?.IsVisible == true) _privacyBlur.Hide(); }
 
     // Clipboard history flyout: list of recent text items; click to copy back.
     private async Task ShowClipboardAsync()
@@ -425,7 +321,7 @@ public partial class App : System.Windows.Application
     private void UpdateKeepExpanded()
     {
         if (_islandViewModel is null) return;
-        var keep = (_settingsWindow?.IsVisible == true) || (_visionWindow?.IsVisible == true);
+        var keep = _settingsWindow?.IsVisible == true;
         _islandViewModel.KeepExpanded = keep;
         _islandWindow?.SetSettingsWindowOpen(keep);
         if (!keep) _islandViewModel.IsExpanded = false;
@@ -465,17 +361,13 @@ public partial class App : System.Windows.Application
         if (_isShuttingDown) return;
         _isShuttingDown = true;
         _log?.Info("Application shutting down");
-        _autoLockTimer?.Stop();
-        _privacyBlur?.Close();
         _tray?.Dispose();
         _timerViewModel?.Dispose();
-        _visionWindow?.Close();
         _settingsWindow?.Close();
         _islandViewModel?.Dispose();
         _qSession?.Dispose();
         _codexClient?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _qSpeech?.Dispose();
-        _vision?.Dispose();
         _weather?.Dispose();
         _sysMon?.Dispose();
         _spectrum?.Dispose();

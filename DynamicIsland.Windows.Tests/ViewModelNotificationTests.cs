@@ -30,14 +30,6 @@ public class ViewModelNotificationTests
     }
 
     [Fact]
-    public void Vision_DoesNotContainStructural()
-    {
-        var structural = ViewModelNotificationGroups.StructuralProperties;
-        foreach (var prop in ViewModelNotificationGroups.VisionProperties)
-            Assert.DoesNotContain(prop, structural);
-    }
-
-    [Fact]
     public void Theme_DoesNotContainStructural()
     {
         var structural = ViewModelNotificationGroups.StructuralProperties;
@@ -94,15 +86,6 @@ public class ViewModelNotificationTests
         Assert.Contains("BatteryGlyph", batt);
         Assert.Contains("IsCharging", batt);
         Assert.Contains("ShowBattery", batt);
-    }
-
-    [Fact]
-    public void Vision_ContainsVisionKeys()
-    {
-        var vis = ViewModelNotificationGroups.VisionProperties;
-        Assert.Contains("Vision", vis);
-        Assert.Contains("ShowVisionStatus", vis);
-        Assert.Contains("VisionDotBrush", vis);
     }
 
     [Fact]

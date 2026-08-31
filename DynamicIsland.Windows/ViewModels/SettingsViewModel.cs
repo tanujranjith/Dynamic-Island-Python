@@ -1,12 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using DynamicIsland.Windows.Infrastructure;
 using DynamicIsland.Windows.Models;
 using DynamicIsland.Windows.Services;
-using DynamicIsland.Windows.Services.Vision;
 using DynamicIsland.Windows.Services.Q;
 using DynamicIsland.Q.Core;
 
@@ -17,8 +14,6 @@ public sealed class SettingsViewModel : ObservableObject
     private readonly AppSettings _settings;
     private readonly SettingsService _settingsService;
     private readonly StartupService _startupService;
-    private readonly VisionService _vision;
-    private readonly VisionModelManager _visionModels;
     private readonly Action _apply;
     private readonly Action _recenter;
     private readonly Action _close;
@@ -28,27 +23,14 @@ public sealed class SettingsViewModel : ObservableObject
     private IReadOnlyList<CodexModel> _codexModels = [];
     private readonly Dictionary<string, IReadOnlyList<QModelInfo>> _providerModels = new(StringComparer.OrdinalIgnoreCase);
     private string _qConnectionStatus = "Not tested";
-    private string _visionStatusLine = string.Empty;
-    private bool _visionBusy;
-    private BitmapImage? _cameraPreview;
-    private bool _previewActive;
-    private bool _isEnrolling;
-    private double _enrollProgress;
-    private string _enrollTitle = "Set up Face login";
-    private string _enrollMessage = string.Empty;
-    private bool _enrollSucceeded;
-    private bool _enrollFailed;
-
     public SettingsViewModel(AppSettings settings, SettingsService settingsService,
-        StartupService startupService, VisionService vision, VisionModelManager visionModels,
-        Action apply, Action recenter, Action close, IQSecretStore qSecrets, IQProviderRegistry qProviders,
+        StartupService startupService, Action apply, Action recenter, Action close,
+        IQSecretStore qSecrets, IQProviderRegistry qProviders,
         CodexAccountCoordinator codexAccount)
     {
         _settings = settings;
         _settingsService = settingsService;
         _startupService = startupService;
-        _vision = vision;
-        _visionModels = visionModels;
         _apply = apply;
         _recenter = recenter;
         _close = close;
@@ -61,13 +43,6 @@ public sealed class SettingsViewModel : ObservableObject
         RecenterCommand = new RelayCommand(() => { _recenter(); _ = SaveAsync(false); });
         CloseCommand = new RelayCommand(() => { _ = SaveAsync(); _close(); });
         ResetCommand = new RelayCommand(ResetToDefaults);
-        EnrollCommand = new RelayCommand(() => _ = StartEnrollAsync(), () => !_visionBusy);
-        CancelEnrollCommand = new RelayCommand(CancelEnroll);
-        DismissEnrollCommand = new RelayCommand(() => IsEnrolling = false);
-        RemoveEnrollmentCommand = new RelayCommand(RemoveEnrollment);
-        DownloadModelsCommand = new RelayCommand(() => _ = DownloadModelsAsync(), () => !_visionBusy);
-        OpenModelsFolderCommand = new RelayCommand(OpenModelsFolder);
-        OpenVisionPageCommand = new RelayCommand(() => OpenVisionPage?.Invoke());
         ImportCommand = new RelayCommand(Import);
         ExportCommand = new RelayCommand(Export);
         SavePresetCommand = new RelayCommand(() => _ = SavePresetAsync());
@@ -93,57 +68,8 @@ public sealed class SettingsViewModel : ObservableObject
         BrowseQuickLaunchCommand = new RelayCommand<LaunchListItem>(BrowseQuickLaunch);
         MoveQuickLaunchUpCommand = new RelayCommand<LaunchListItem>(i => MoveQuickLaunch(i, -1));
         MoveQuickLaunchDownCommand = new RelayCommand<LaunchListItem>(i => MoveQuickLaunch(i, +1));
-        _vision.FrameReady += OnVisionFrame;
-        _vision.EnrollProgressChanged += OnEnrollProgress;
-        _visionStatusLine = BuildVisionStatus();
         InitLists();
         RebuildQShortcuts();
-    }
-
-    // Called by the camera settings window so live preview frames flow only while it is open.
-    public void BeginPreview()
-    {
-        if (_previewActive) return;
-        _previewActive = true;
-        _vision.RetainPreview();
-        RefreshVisionStatus();
-    }
-
-    public void EndPreview()
-    {
-        if (!_previewActive) return;
-        _previewActive = false;
-        _vision.ReleasePreview();
-        _cameraPreview = null;
-        RaisePropertyChanged(nameof(CameraPreview));
-        RaisePropertyChanged(nameof(HasCameraPreview));
-    }
-
-    public ImageSource? CameraPreview => _cameraPreview;
-    public bool HasCameraPreview => _cameraPreview is not null;
-
-    private void OnVisionFrame(object? sender, byte[] jpeg)
-    {
-        if (!_previewActive) return;
-        void Apply()
-        {
-            try
-            {
-                var image = new BitmapImage();
-                using var stream = new MemoryStream(jpeg);
-                image.BeginInit();
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.StreamSource = stream;
-                image.EndInit();
-                image.Freeze();
-                _cameraPreview = image;
-            }
-            catch { return; }
-            RaisePropertyChanged(nameof(CameraPreview));
-            RaisePropertyChanged(nameof(HasCameraPreview));
-        }
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) Apply(); else dispatcher.BeginInvoke(Apply);
     }
 
     public ObservableCollection<string> AvailableMediaApps { get; } = ["Automatic"];
@@ -267,7 +193,6 @@ public sealed class SettingsViewModel : ObservableObject
     public int MediaTitleSize { get => _settings.MediaTitleSize; set => SetSize(v => _settings.MediaTitleSize = v, value, 60, 160); }
     public int MediaArtistSize { get => _settings.MediaArtistSize; set => SetSize(v => _settings.MediaArtistSize = v, value, 60, 160); }
     public int VolumeSize { get => _settings.VolumeSize; set => SetSize(v => _settings.VolumeSize = v, value, 60, 160); }
-    public int VisionTextSize { get => _settings.VisionTextSize; set => SetSize(v => _settings.VisionTextSize = v, value, 60, 160); }
     public int CompactTextSize { get => _settings.CompactTextSize; set => SetSize(v => _settings.CompactTextSize = v, value, 60, 160); }
 
     // ===== Colours & font =====
@@ -645,12 +570,6 @@ public sealed class SettingsViewModel : ObservableObject
     public bool VolumeWarningEnabled { get => _settings.VolumeWarningEnabled; set { Set(v => _settings.VolumeWarningEnabled = v, value); _apply(); } }
     public int VolumeWarningThreshold { get => _settings.VolumeWarningThreshold; set => SetSize(v => _settings.VolumeWarningThreshold = v, value, 10, 100); }
 
-    // ===== Camera automations =====
-    public bool AutoLockOnUnknown { get => _settings.AutoLockOnUnknown; set { Set(v => _settings.AutoLockOnUnknown = v, value); _apply(); } }
-    public int AutoLockDelaySeconds { get => _settings.AutoLockDelaySeconds; set => SetSize(v => _settings.AutoLockDelaySeconds = v, value, 2, 60); }
-    public bool PresenceAwareMedia { get => _settings.PresenceAwareMedia; set { Set(v => _settings.PresenceAwareMedia = v, value); _apply(); } }
-    public bool PrivacyAutoBlur { get => _settings.PrivacyAutoBlur; set { Set(v => _settings.PrivacyAutoBlur = v, value); _apply(); } }
-
     // ===== Module order =====
     public ObservableCollection<ModuleItem> ModuleOrder { get; } = [];
 
@@ -825,198 +744,13 @@ public sealed class SettingsViewModel : ObservableObject
         RebuildModuleOrder();
         RebuildQuickLaunch();
         RaisePropertyChanged(string.Empty);
-        RefreshVisionStatus();
         _ = SaveAsync();
     }
-
-    // ===== Camera presence (vision) =====
-    public bool VisionEnabled
-    {
-        get => _settings.VisionEnabled;
-        set { Set(v => _settings.VisionEnabled = v, value); _apply(); RefreshVisionStatus(); }
-    }
-    public bool VisionPrivacyMode
-    {
-        get => _settings.VisionPrivacyMode;
-        set { Set(v => _settings.VisionPrivacyMode = v, value); _apply(); }
-    }
-    public bool ShowVisionStatus
-    {
-        get => _settings.ShowVisionStatus;
-        set { Set(v => _settings.ShowVisionStatus = v, value); _apply(); }
-    }
-    public string VisionStatusLine
-    {
-        get => _visionStatusLine;
-        private set => SetProperty(ref _visionStatusLine, value);
-    }
-
-    // ===== Guided face-enrollment overlay =====
-    public bool IsEnrolling
-    {
-        get => _isEnrolling;
-        private set { if (SetProperty(ref _isEnrolling, value)) RaisePropertyChanged(nameof(EnrollInProgress)); }
-    }
-    public double EnrollProgress { get => _enrollProgress; private set => SetProperty(ref _enrollProgress, value); }
-    public double EnrollRingPerimeterUnits => 106.8; // circumference / stroke thickness for the 210px ring
-    public string EnrollTitle { get => _enrollTitle; private set => SetProperty(ref _enrollTitle, value); }
-    public string EnrollMessage { get => _enrollMessage; private set => SetProperty(ref _enrollMessage, value); }
-    public bool EnrollSucceeded
-    {
-        get => _enrollSucceeded;
-        private set { if (SetProperty(ref _enrollSucceeded, value)) RaisePropertyChanged(nameof(EnrollInProgress)); }
-    }
-    public bool EnrollFailed
-    {
-        get => _enrollFailed;
-        private set { if (SetProperty(ref _enrollFailed, value)) RaisePropertyChanged(nameof(EnrollInProgress)); }
-    }
-    public bool EnrollInProgress => _isEnrolling && !_enrollSucceeded && !_enrollFailed;
 
     public ICommand SaveCommand { get; }
     public ICommand RecenterCommand { get; }
     public ICommand CloseCommand { get; }
     public ICommand ResetCommand { get; }
-    public ICommand EnrollCommand { get; }
-    public ICommand CancelEnrollCommand { get; }
-    public ICommand DismissEnrollCommand { get; }
-    public ICommand RemoveEnrollmentCommand { get; }
-    public ICommand DownloadModelsCommand { get; }
-    public ICommand OpenModelsFolderCommand { get; }
-    public ICommand OpenVisionPageCommand { get; }
-    /// <summary>Supplied by the composition root to open the standalone camera settings window.</summary>
-    public Action? OpenVisionPage { get; set; }
-
-    private string BuildVisionStatus()
-    {
-        var paths = _visionModels.Resolve();
-        var person = paths.PersonReady ? "person model ready" : "person model missing";
-        var face = paths.FaceReady ? "face models ready" : "face models missing";
-        var enrolled = _vision.IsEnrolled ? "face enrolled" : "not enrolled";
-        return $"{person} · {face} · {enrolled}";
-    }
-
-    private void RefreshVisionStatus() => VisionStatusLine = BuildVisionStatus();
-
-    private void SetVisionBusy(bool busy)
-    {
-        _visionBusy = busy;
-        (EnrollCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        (DownloadModelsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-    }
-
-    private async Task StartEnrollAsync()
-    {
-        // Open the overlay immediately so the flow feels responsive.
-        EnrollTitle = "Set up Face login";
-        EnrollSucceeded = false;
-        EnrollFailed = false;
-        EnrollProgress = 0;
-        IsEnrolling = true;
-
-        // Make sure the camera is actually running so there is something to enroll from.
-        if (!_settings.VisionEnabled) VisionEnabled = true;
-        if (!_visionModels.Resolve().FaceReady)
-        {
-            EnrollMessage = "Face models are missing. Download them on this page, then try again.";
-            EnrollFailed = true;
-            return;
-        }
-
-        EnrollMessage = "Center your face in the circle and hold still.";
-        SetVisionBusy(true);
-        try
-        {
-            var ok = await _vision.EnrollAsync();
-            // Final phase text comes from OnEnrollProgress; this is the fallback if the loop never started.
-            if (!ok && !_enrollFailed && !_enrollSucceeded)
-            {
-                EnrollFailed = true;
-                EnrollMessage = "Couldn't start the camera. Make sure it isn't in use by another app.";
-            }
-            RefreshVisionStatus();
-        }
-        finally { SetVisionBusy(false); }
-    }
-
-    private void CancelEnroll()
-    {
-        _vision.CancelEnroll();
-        IsEnrolling = false;
-    }
-
-    private void OnEnrollProgress(object? sender, EnrollProgress e)
-    {
-        void Apply()
-        {
-            EnrollProgress = e.Target > 0 ? Math.Min(100, e.Captured * 100.0 / e.Target) : 0;
-            switch (e.Phase)
-            {
-                case EnrollPhase.Searching:
-                    EnrollMessage = "Looking for your face… come a little closer.";
-                    break;
-                case EnrollPhase.Capturing:
-                    EnrollMessage = $"Hold still… capturing {e.Captured}/{e.Target}";
-                    break;
-                case EnrollPhase.Completed:
-                    EnrollProgress = 100;
-                    EnrollSucceeded = true;
-                    EnrollTitle = "You're all set";
-                    EnrollMessage = "Face login is ready. Privacy mode can now recognise you.";
-                    RefreshVisionStatus();
-                    break;
-                case EnrollPhase.Failed:
-                    EnrollFailed = true;
-                    EnrollTitle = "Let's try that again";
-                    EnrollMessage = "Couldn't get a clear read. Face the camera in good light and retry.";
-                    break;
-            }
-        }
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null || dispatcher.CheckAccess()) Apply(); else dispatcher.BeginInvoke(Apply);
-    }
-
-    private void RemoveEnrollment()
-    {
-        _vision.RemoveEnrollment();
-        RefreshVisionStatus();
-    }
-
-    private async Task DownloadModelsAsync()
-    {
-        if (!_settings.VisionModelsConsented)
-        {
-            var choice = System.Windows.MessageBox.Show(
-                "Download the camera detection models (~25 MB) from public GitHub repositories?\n\n" +
-                "They are saved locally and only the model files are downloaded — no images leave your PC.",
-                "Download detection models", System.Windows.MessageBoxButton.OKCancel,
-                System.Windows.MessageBoxImage.Question);
-            if (choice != System.Windows.MessageBoxResult.OK) return;
-            Set(v => _settings.VisionModelsConsented = v, true);
-        }
-
-        SetVisionBusy(true);
-        var progress = new Progress<string>(message => VisionStatusLine = message);
-        try
-        {
-            var ok = await _visionModels.DownloadAsync(progress, CancellationToken.None);
-            VisionStatusLine = (ok ? "Models ready. " : "") + BuildVisionStatus();
-            // Restart the camera loop so a running detector reloads the freshly downloaded models.
-            if (ok && _settings.VisionEnabled) { _vision.Stop(); _apply(); }
-        }
-        finally { SetVisionBusy(false); }
-    }
-
-    private void OpenModelsFolder()
-    {
-        try
-        {
-            Directory.CreateDirectory(_visionModels.ModelsDir);
-            Process.Start(new ProcessStartInfo { FileName = _visionModels.ModelsDir, UseShellExecute = true });
-        }
-        catch { /* best effort */ }
-    }
-
     public void SetAvailableApps(IEnumerable<string> apps)
     {
         var values = new[] { "Automatic" }.Concat(apps).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -1029,7 +763,7 @@ public sealed class SettingsViewModel : ObservableObject
     {
         var choice = System.Windows.MessageBox.Show(
             "Reset all Dynamic Island settings back to their defaults?\n\nThis affects appearance, sizes, " +
-            "position and camera options. Your enrolled face and downloaded models are kept.",
+            "position, activities, and integrations.",
             "Reset to defaults", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
         if (choice != System.Windows.MessageBoxResult.OK) return;
 
@@ -1038,7 +772,6 @@ public sealed class SettingsViewModel : ObservableObject
         RebuildQuickLaunch();
         RebuildQShortcuts();
         RaisePropertyChanged(string.Empty); // refresh every bound control in the settings windows
-        RefreshVisionStatus();
         _ = SaveAsync(); // persists + re-applies to the island (and syncs the startup registry)
     }
 

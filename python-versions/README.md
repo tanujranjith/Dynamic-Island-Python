@@ -16,7 +16,6 @@ positions, animation styles, and feature sets.
 | `Animated og version.py` | Apple-ish hover island with a smooth orange progress **ring** and an animated `−  XX%  +` volume pill. The most polished animated prototype. |
 | `DynamicIsland_ApplePlus.py` | Canvas-only build (no frame leaks) — soft-shadow pill, dark theme, centered "Title — Artist", SMTC media controls, time/date. |
 | `DynamicIsland_Premium.py` | "Premium" iteration with a fuller feature set and refined layout. |
-| `dynamic_island_vision.py` | Adds optional **webcam person-detection** (a presence dot). Local processing; see `requirements-vision.txt`. |
 | `docked to top best so far.py` | Top-center **notch slab** — flat top, rounded bottom, docked, compact with a subtle expand. Robust Chrome/Edge SMTC titles. |
 | `pill shape best far.py` | Slim top-center pill — playback + volume + auto-resize, no clipping, active-app badge. |
 | `left docked.py` | The slim widget docked to the **bottom-left** instead of top-center. |
@@ -35,13 +34,6 @@ pip install pillow psutil winsdk
 pip install pycaw comtypes
 
 python ".\Animated og version.py"
-```
-
-For the camera-presence build:
-
-```powershell
-pip install -r requirements-vision.txt
-python ".\dynamic_island_vision.py"
 ```
 
 > SMTC media (now-playing) needs `winsdk`; volume control needs `pycaw`. If an

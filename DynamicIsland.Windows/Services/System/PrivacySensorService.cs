@@ -18,9 +18,12 @@ public sealed class PrivacySensorService(LoggingService log) : IDisposable
 
     public event EventHandler<PrivacySensorState>? Changed;
     public PrivacySensorState Current { get; private set; } = PrivacySensorState.None;
+    private bool _started;
 
     public void Start()
     {
+        if (_started) return;
+        _started = true;
         _timer.Tick += (_, _) => Poll();
         _timer.Start();
         Poll();
@@ -44,27 +47,44 @@ public sealed class PrivacySensorService(LoggingService log) : IDisposable
     {
         using var key = root.OpenSubKey(
             $@"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\{capability}");
-        return key is not null && ScanApps(key);
+        return key is not null && ScanTree(key);
     }
 
-    private static bool ScanApps(RegistryKey key)
+    private static bool ScanTree(RegistryKey key)
     {
+        if (IsActive(key)) return true;
         foreach (var name in key.GetSubKeyNames())
         {
-            using var sub = key.OpenSubKey(name);
-            if (sub is null) continue;
-            // Desktop (non-Store) apps live one level deeper under "NonPackaged".
-            if (name.Equals("NonPackaged", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                if (ScanApps(sub)) return true;
-                continue;
+                using var sub = key.OpenSubKey(name);
+                if (sub is not null && ScanTree(sub)) return true;
             }
-            if (sub.GetValue("LastUsedTimeStart") is long start && start > 0
-                && sub.GetValue("LastUsedTimeStop") is long stop && stop == 0)
-                return true;
+            catch (UnauthorizedAccessException) { }
+            catch (System.Security.SecurityException) { }
         }
         return false;
     }
 
-    public void Dispose() => _timer.Stop();
+    private static bool IsActive(RegistryKey key)
+    {
+        var start = ReadInt64(key.GetValue("LastUsedTimeStart"));
+        var stop = ReadInt64(key.GetValue("LastUsedTimeStop"));
+        return start is > 0 && stop.GetValueOrDefault() == 0;
+    }
+
+    private static long? ReadInt64(object? value) => value switch
+    {
+        long number => number,
+        int number => number,
+        byte[] bytes when bytes.Length >= sizeof(long) => BitConverter.ToInt64(bytes, 0),
+        string text when long.TryParse(text, out var number) => number,
+        _ => null
+    };
+
+    public void Dispose()
+    {
+        _timer.Stop();
+        _started = false;
+    }
 }

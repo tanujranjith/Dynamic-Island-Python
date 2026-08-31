@@ -7,6 +7,15 @@ namespace DynamicIsland.Windows.Tests;
 public sealed class CodexTurnStartRequestTests
 {
     [Fact]
+    public void ThreadStartUsesCurrentReadOnlySandboxEnum()
+    {
+        var parameters = CodexTurnStartRequest.CreateThread("gpt-5.6-luna", @"C:\workspace");
+
+        Assert.Equal("read-only", parameters["sandbox"]);
+        Assert.Equal("never", parameters["approvalPolicy"]);
+    }
+
+    [Fact]
     public void LunaLowIsSentExactlyToCodexAppServer()
     {
         var parameters = CodexTurnStartRequest.Create("thread-1",

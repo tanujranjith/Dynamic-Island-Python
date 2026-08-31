@@ -2,6 +2,15 @@ namespace DynamicIsland.Windows.Services.Q;
 
 internal static class CodexTurnStartRequest
 {
+    public static Dictionary<string, object?> CreateThread(string model, string workspace) => new()
+    {
+        ["model"] = model,
+        ["cwd"] = workspace,
+        ["approvalPolicy"] = "never",
+        ["sandbox"] = "read-only",
+        ["serviceName"] = "dynamic_island_q"
+    };
+
     public static Dictionary<string, object?> Create(string threadId, IReadOnlyList<object> input,
         string model, string? reasoningEffort)
     {

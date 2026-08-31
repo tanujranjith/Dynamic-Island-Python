@@ -451,7 +451,7 @@
         <Border x:Name="GlassShell" Width="230" Height="62" Margin="0,8,0,0"
                 HorizontalAlignment="Center" VerticalAlignment="Top" CornerRadius="{Binding IslandCornerRadius}"
                 Background="{Binding IslandSurfaceBrush}" BorderThickness="0"
-                RenderTransformOrigin="0.5,0" ClipToBounds="True"
+                RenderTransformOrigin="0.5,0" ClipToBounds="True" Panel.ZIndex="10"
                 MouseEnter="Pill_MouseEnter" MouseLeave="Pill_MouseLeave"
                 MouseLeftButtonDown="Pill_MouseLeftButtonDown"
                 MouseRightButtonUp="Pill_MouseRightButtonUp">
@@ -592,6 +592,7 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <Grid Grid.RowSpan="3" Width="{Binding ExpandedAlbumSize}" Height="{Binding ExpandedAlbumSize}" Margin="0,0,16,0" VerticalAlignment="Top" Cursor="Hand" MouseLeftButtonUp="AlbumArt_Click">
@@ -615,35 +616,87 @@
                                    Foreground="{Binding SecondaryTextBrush}" />
                     </Grid>
 
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
-                        <Button Content="Q" Click="QButton_Click" Style="{StaticResource AppleControl}" Width="34" Height="34" FontSize="13" FontFamily="Segoe UI Variable Text"
-                                Foreground="#FF409CFF" ToolTip="Ask Q" AutomationProperties.Name="Open Q" />
-                        <Button Content="&#xE916;" Click="TimerButton_Click" Style="{StaticResource AppleControl}"
-                                Width="34" Height="34" FontSize="14" ToolTip="Timer"
-                                AutomationProperties.Name="Open timer" />
-                        <Button Content="&#xE713;" Click="SettingsButton_Click" Style="{StaticResource AppleControl}"
-                                Width="34" Height="34" FontSize="14" ToolTip="Settings"
-                                AutomationProperties.Name="Open settings" />
-                        <Button Content="{Binding VolumeGlyph}" Command="{Binding ToggleMuteCommand}" Style="{StaticResource AppleControl}"
-                                Visibility="{Binding ShowVolume, Converter={StaticResource BoolToVisibility}}"
-                                Width="34" Height="34" FontSize="14" ToolTip="Mute" />
-                        <Button x:Name="OutputDeviceButton" Content="&#xE711;" Style="{StaticResource AppleControl}" Width="34" Height="34" FontSize="14"
-                                Visibility="{Binding ShowVolume, Converter={StaticResource BoolToVisibility}}"
-                                ToolTip="Choose audio output" MouseLeftButtonUp="OutputDevice_Click" />
-                        <Button x:Name="MenuButton" Content="&#xE712;" Style="{StaticResource AppleControl}" Width="34" Height="34" FontSize="14"
-                                ToolTip="More" Click="MenuButton_Click">
-                            <Button.ContextMenu>
-                                <ContextMenu Placement="Bottom" PlacementTarget="{Binding ElementName=MenuButton}" HorizontalOffset="-126" VerticalOffset="6">
-                                    <MenuItem Header="Settings" Click="SettingsButton_Click" />
-                                    <MenuItem Header="Ask Q" Click="QButton_Click" />
-                                    <MenuItem Header="Timer" Click="TimerButton_Click" />
-                                    <Separator />
-                                    <MenuItem Header="Recenter island" Click="RecenterMenu_Click" />
-                                    <MenuItem Header="Collapse" Click="CollapseMenu_Click" />
-                                </ContextMenu>
-                            </Button.ContextMenu>
-                        </Button>
-                    </StackPanel>
+                    <Grid Grid.Column="2" VerticalAlignment="Top">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="34" />
+                            <RowDefinition Height="30" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="Q" Click="QButton_Click" Style="{StaticResource AppleControl}" Width="34" Height="34" FontSize="13" FontFamily="Segoe UI Variable Text"
+                                    Foreground="#FF409CFF" ToolTip="Ask Q" AutomationProperties.Name="Open Q" />
+                            <Button Content="&#xE916;" Click="TimerButton_Click" Style="{StaticResource AppleControl}"
+                                    Width="34" Height="34" FontSize="14" ToolTip="Timer"
+                                    AutomationProperties.Name="Open timer" />
+                            <Button Content="&#xE713;" Click="SettingsButton_Click" Style="{StaticResource AppleControl}"
+                                    Width="34" Height="34" FontSize="14" ToolTip="Settings"
+                                    AutomationProperties.Name="Open settings" />
+                            <Button Content="{Binding VolumeGlyph}" Command="{Binding ToggleMuteCommand}" Style="{StaticResource AppleControl}"
+                                    Visibility="{Binding ShowVolume, Converter={StaticResource BoolToVisibility}}"
+                                    Width="34" Height="34" FontSize="14" ToolTip="Mute" />
+                            <Button x:Name="OutputDeviceButton" Content="&#xE711;" Style="{StaticResource AppleControl}" Width="34" Height="34" FontSize="14"
+                                    Visibility="{Binding ShowVolume, Converter={StaticResource BoolToVisibility}}"
+                                    ToolTip="Choose audio output" MouseLeftButtonUp="OutputDevice_Click" />
+                            <Button x:Name="MenuButton" Content="&#xE712;" Style="{StaticResource AppleControl}" Width="34" Height="34" FontSize="14"
+                                    ToolTip="More" Click="MenuButton_Click">
+                                <Button.ContextMenu>
+                                    <ContextMenu Placement="Bottom" PlacementTarget="{Binding ElementName=MenuButton}" HorizontalOffset="-126" VerticalOffset="6">
+                                        <MenuItem Header="Settings" Click="SettingsButton_Click" />
+                                        <MenuItem Header="Ask Q" Click="QButton_Click" />
+                                        <MenuItem Header="Timer" Click="TimerButton_Click" />
+                                        <Separator />
+                                        <MenuItem Header="Recenter island" Click="RecenterMenu_Click" />
+                                        <MenuItem Header="Collapse" Click="CollapseMenu_Click" />
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Expanded privacy state behaves like a compact Live Activity region rather
+                             than a floating indicator or notification card. -->
+                        <Border x:Name="ExpandedPrivacyActivity" Grid.Row="1" Height="26" MinWidth="168"
+                                Padding="10,0" Margin="0,3,0,1" HorizontalAlignment="Right"
+                                CornerRadius="13" Background="#FF111411" BorderBrush="#24FFFFFF" BorderThickness="1"
+                                RenderTransformOrigin="1,0.5" IsHitTestVisible="False"
+                                AutomationProperties.Name="{Binding PrivacyActivityText}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding ShowPrivacyInUse}" Value="True" />
+                                                <Condition Binding="{Binding IsExpanded}" Value="True" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <Border.RenderTransform>
+                                <TransformGroup>
+                                    <ScaleTransform x:Name="ExpandedPrivacyScale" ScaleX="1" ScaleY="1" />
+                                    <TranslateTransform x:Name="ExpandedPrivacyTranslate" X="0" Y="0" />
+                                </TransformGroup>
+                            </Border.RenderTransform>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Width="7" Height="7" Margin="0,0,7,0"
+                                         Fill="{Binding PrivacyIndicatorBrush}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding PrivacyActivityText}"
+                                           FontFamily="Segoe UI Variable Text" FontSize="10.5" FontWeight="SemiBold"
+                                           Foreground="{StaticResource AppleWhite}" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="2" Text="LIVE" Margin="10,0,0,0"
+                                           FontFamily="Segoe UI Variable Text" FontSize="8" FontWeight="Bold"
+                                           Foreground="{Binding PrivacyIndicatorBrush}" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </Grid>
 
                     <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,6,0,0"
                           Visibility="{Binding ShowMediaTimes, Converter={StaticResource BoolToVisibility}}">
@@ -768,6 +821,150 @@
 
                     </Grid>
 
+                    <!-- Accessories share one horizontal lane while remaining distinct cards. -->
+                    <DockPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" LastChildFill="True">
+                        <Border x:Name="LiveWidgetsStrip" DockPanel.Dock="Right" Width="230" Height="64"
+                                Margin="8,8,0,0" CornerRadius="16" Background="Transparent"
+                                Visibility="{Binding ShowWidgetsPanel, Converter={StaticResource BoolToVisibility}}">
+                            <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                                          PanningMode="HorizontalOnly" CanContentScroll="True">
+                                <StackPanel Orientation="Horizontal">
+                            <Border Width="210" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
+                                    Background="#FF1A2028"
+                                    Visibility="{Binding ShowWeather, Converter={StaticResource BoolToVisibility}}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="36" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding WeatherGlyph}" FontFamily="Segoe Fluent Icons" FontSize="24"
+                                               Foreground="#FF64B5FF" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="WEATHER" FontFamily="Segoe UI Variable Text" FontSize="8"
+                                                   FontWeight="SemiBold" Foreground="#FF8F9BA8" />
+                                        <TextBlock Text="{Binding WeatherTempText}" Margin="0,2,0,0"
+                                                   FontFamily="Segoe UI Variable Text" FontSize="15" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource AppleWhite}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding WeatherDescText}" Margin="0,1,0,0"
+                                                   FontFamily="Segoe UI Variable Text" FontSize="9.5"
+                                                   Foreground="{StaticResource AppleSecondary}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <Border Width="150" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
+                                    Background="#FF1A2028"
+                                    Visibility="{Binding ShowCountdown, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="COUNTDOWN" FontFamily="Segoe UI Variable Text" FontSize="8"
+                                               FontWeight="SemiBold" Foreground="#FF8F9BA8" />
+                                    <TextBlock Text="{Binding CountdownText}" Margin="0,5,0,0"
+                                               FontFamily="Segoe UI Variable Text" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AppleWhite}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Width="210" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
+                                    Background="#FF1A2028"
+                                    Visibility="{Binding ShowNextMeeting, Converter={StaticResource BoolToVisibility}}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="NEXT MEETING" FontFamily="Segoe UI Variable Text" FontSize="8"
+                                                   FontWeight="SemiBold" Foreground="#FF8F9BA8" />
+                                        <TextBlock Text="{Binding MeetingTitle}" Margin="0,3,0,0"
+                                                   FontFamily="Segoe UI Variable Text" FontSize="11.5" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource AppleWhite}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding MeetingWhen}" Margin="0,1,0,0"
+                                                   FontFamily="Segoe UI Variable Text" FontSize="9.5"
+                                                   Foreground="{StaticResource AppleSecondary}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="Join" Margin="8,0,0,0" Padding="10,6"
+                                            Style="{StaticResource TimerPrimaryButton}" Click="JoinMeeting_Click"
+                                            Visibility="{Binding HasMeetingJoin, Converter={StaticResource BoolToVisibility}}"
+                                            AutomationProperties.Name="Join next meeting" />
+                                </Grid>
+                            </Border>
+
+                            <Border Width="150" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16"
+                                    Background="#FF1A2028"
+                                    Visibility="{Binding ShowBatteryTime, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="BATTERY TIME" FontFamily="Segoe UI Variable Text" FontSize="8"
+                                               FontWeight="SemiBold" Foreground="#FF8F9BA8" />
+                                    <TextBlock Text="{Binding BatteryTimeText}" Margin="0,5,0,0"
+                                               FontFamily="Segoe UI Variable Text" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AppleWhite}" />
+                                </StackPanel>
+                            </Border>
+
+                            <ItemsControl ItemsSource="{Binding WorldClocks}"
+                                          Visibility="{Binding ShowWorldClocks, Converter={StaticResource BoolToVisibility}}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="140" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16" Background="#FF1A2028">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Label}" FontFamily="Segoe UI Variable Text" FontSize="8"
+                                                           FontWeight="SemiBold" Foreground="#FF8F9BA8" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Time}" Margin="0,5,0,0" FontFamily="Segoe UI Variable Text"
+                                                           FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource AppleWhite}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <ItemsControl ItemsSource="{Binding Stocks}"
+                                          Visibility="{Binding ShowStocks, Converter={StaticResource BoolToVisibility}}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="140" Height="64" Margin="0,0,8,0" Padding="11,7" CornerRadius="16" Background="#FF1A2028">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Symbol}" FontFamily="Segoe UI Variable Text" FontSize="8"
+                                                               FontWeight="SemiBold" Foreground="#FF8F9BA8" />
+                                                    <TextBlock Text="{Binding PriceText}" Margin="0,5,0,0" FontFamily="Segoe UI Variable Text"
+                                                               FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AppleWhite}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding ChangeText}" Margin="8,0,0,0"
+                                                           FontFamily="Segoe UI Variable Text" FontSize="9.5"
+                                                           Foreground="#FF74D990" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+
+                        <!-- AirPods remains its own card and fills the space left of live widgets. -->
+                        <Border x:Name="AirPodsCard" MinHeight="64" Margin="0,8,0,0" Padding="12,7" CornerRadius="16"
+                                Background="#FF17191D" BorderBrush="#24FFFFFF" BorderThickness="1"
+                                Visibility="{Binding ShowAirPodsCard, Converter={StaticResource BoolToVisibility}}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <Border Width="38" Height="38" CornerRadius="12" Background="#FF242A31" VerticalAlignment="Center">
+                                    <Image Source="/DynamicIsland.Windows;component/Assets/airpods-pro.png"
+                                           Width="38" Height="38" Stretch="Uniform" SnapsToDevicePixels="True" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="10,0,10,0" VerticalAlignment="Center">
+                                    <TextBlock Text="AIRPODS" FontFamily="Segoe UI Variable Text" FontSize="8" FontWeight="SemiBold" Foreground="#FF8F9BA8" />
+                                    <TextBlock Text="{Binding AirPodsName}" Margin="0,2,0,0" FontFamily="Segoe UI Variable Text" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AppleWhite}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding AirPodsStatusText}" Margin="0,1,0,0" FontFamily="Segoe UI Variable Text" FontSize="9" Foreground="#FF9BA8B5" />
+                                </StackPanel>
+                                <Border Grid.Column="2" Padding="9,5" CornerRadius="12" Background="#142D21" BorderBrush="#344D3D" BorderThickness="1" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="6" Height="6" Margin="0,0,6,0" Fill="#FF30D158" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding AirPodsBatterySummary}" FontFamily="Segoe UI Variable Text" FontSize="9.5" FontWeight="SemiBold"
+                                                   Foreground="#FF9EE2AD" TextTrimming="CharacterEllipsis" MaxWidth="135" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DockPanel>
+
                     <!-- Stats has a complete, opaque dashboard instead of sitting on top of the
                          Apple media deck. That prevents duplicate artwork/title rows and lets the
                          three live tiles use the full available height. -->
@@ -835,35 +1032,9 @@
                         </Grid>
                     </Border>
 
-                    <!-- AirPods status card: a complete, compact row rather than an empty battery panel. -->
-                    <Border x:Name="AirPodsCard" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" MinHeight="64" Margin="0,8,0,0" Padding="14,8" CornerRadius="16"
-                            Background="#FF17191D" BorderBrush="#24FFFFFF" BorderThickness="1"
-                            Visibility="{Binding ShowAirPodsCard, Converter={StaticResource BoolToVisibility}}">
-                        <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="42" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <Border Width="38" Height="38" CornerRadius="12" Background="#FF242A31" VerticalAlignment="Center">
-                                <Image Source="/DynamicIsland.Windows;component/Assets/airpods-pro.png"
-                                       Width="38" Height="38" Stretch="Uniform" SnapsToDevicePixels="True" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="10,0,12,0" VerticalAlignment="Center">
-                                <TextBlock Text="AIRPODS" FontFamily="Segoe UI Variable Text" FontSize="8" FontWeight="SemiBold" Foreground="#FF8F9BA8" />
-                                <TextBlock Text="{Binding AirPodsName}" Margin="0,2,0,0" FontFamily="Segoe UI Variable Text" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{StaticResource AppleWhite}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding AirPodsStatusText}" Margin="0,1,0,0" FontFamily="Segoe UI Variable Text" FontSize="9" Foreground="#FF9BA8B5" />
-                            </StackPanel>
-                            <Border Grid.Column="2" Padding="10,6" CornerRadius="12" Background="#142D21" BorderBrush="#344D3D" BorderThickness="1" VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse Width="6" Height="6" Margin="0,0,6,0" Fill="#FF30D158" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding AirPodsBatterySummary}" FontFamily="Segoe UI Variable Text" FontSize="10" FontWeight="SemiBold"
-                                               Foreground="#FF9EE2AD" TextTrimming="CharacterEllipsis" MaxWidth="180" />
-                                </StackPanel>
-                            </Border>
-                        </Grid>
-                    </Border>
-
                     <!-- Active timer live activity: it shares the expanded island and appears directly
                          beneath the existing volume/system/time deck in either visual style. -->
-                    <Border x:Name="LiveTimerStrip" Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2"
+                    <Border x:Name="LiveTimerStrip" Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2"
                             Height="76" Margin="0,10,0,0" Padding="14,10" CornerRadius="17"
                             Background="#FF151517" Visibility="Collapsed">
                         <Grid>
@@ -915,7 +1086,7 @@
                     </Border>
 
                 <!-- Q overlay: approved Apple-inspired conversation mockup. -->
-                <Grid x:Name="QContent" Grid.Row="0" Grid.Column="0" Grid.RowSpan="5" Grid.ColumnSpan="3"
+                <Grid x:Name="QContent" Grid.Row="0" Grid.Column="0" Grid.RowSpan="7" Grid.ColumnSpan="3"
                       Panel.ZIndex="90" Margin="0" Background="Transparent" ClipToBounds="False" Opacity="0" IsHitTestVisible="False" Visibility="Collapsed">
                     <Border x:Name="QShell" CornerRadius="{Binding IslandCornerRadius}" Background="#FF080C12"
                             BorderBrush="#FF344156" BorderThickness="1" ClipToBounds="True">
@@ -1326,9 +1497,39 @@
                             </StackPanel>
                         </Border>
                     </Popup>
+
                 </Grid>
             </Grid>
         </Border>
+
+        <!-- Compact privacy stays minimal; expanded privacy moves into the island's Live Activity region. -->
+        <Grid x:Name="PrivacyIndicatorDot" Width="18" Height="18" Margin="0,8,0,0"
+              HorizontalAlignment="Center" VerticalAlignment="Top" Panel.ZIndex="21"
+              RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False"
+              AutomationProperties.Name="{Binding PrivacyActivityText}">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding ShowPrivacyInUse}" Value="True" />
+                                <Condition Binding="{Binding IsCompact}" Value="True" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <Grid.RenderTransform>
+                <TransformGroup>
+                    <ScaleTransform x:Name="PrivacyDotScale" ScaleX="1" ScaleY="1" />
+                    <TranslateTransform x:Name="PrivacyDotTranslate" X="135" Y="17" />
+                </TransformGroup>
+            </Grid.RenderTransform>
+            <Border CornerRadius="9" Background="#FD000000" BorderBrush="#20FFFFFF" BorderThickness="1" />
+            <Ellipse Width="8" Height="8" Fill="{Binding PrivacyIndicatorBrush}" />
+        </Grid>
 
         <!-- Apple-style compact timer activity. It is deliberately outside GlassShell so it remains
              a separate orb instead of changing the user's compact island width or media layout. -->
