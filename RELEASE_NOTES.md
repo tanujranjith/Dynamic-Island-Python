@@ -1,3 +1,17 @@
+# Dynamic Island v1.0.8
+
+## Expanded live-widget layout
+
+- Fixed the expanded island clipping the countdown widget when weather was also enabled.
+- The live-widget rail now sizes itself to the visible cards, preserving the AirPods card while keeping weather and countdown fully visible together.
+- Additional enabled widgets remain accessible with horizontal mouse-wheel scrolling.
+
+## Verification
+
+- Release build: succeeded with 0 warnings and 0 errors.
+- Automated tests: 97 passed, 0 failed, 0 skipped.
+
+---
 # Dynamic Island v1.0.7
 
 ## Live activities and expanded layout
