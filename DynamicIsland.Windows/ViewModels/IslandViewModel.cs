@@ -666,6 +666,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         get
         {
+            if (!ShowAirPodsCard) return AccessoryLaneWidth;
+
             var width = 0d;
             if (ShowWeather) width += 188d;
             if (ShowCountdown) width += 144d;
@@ -676,6 +678,32 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             return Math.Min(332d, width);
         }
     }
+    private double AccessoryLaneWidth => Settings.IslandSize switch
+    {
+        IslandSize.Compact => 608d,
+        IslandSize.Large => 788d,
+        _ => 688d
+    };
+    private int LiveWidgetCount =>
+        (ShowWeather ? 1 : 0) +
+        (ShowCountdown ? 1 : 0) +
+        (ShowNextMeeting ? 1 : 0) +
+        (ShowBatteryTime ? 1 : 0) +
+        (ShowWorldClocks ? WorldClocks.Count : 0) +
+        (ShowStocks ? Stocks.Count : 0);
+    private double ExpandedLiveWidgetCardWidth => LiveWidgetCount == 0
+        ? 0d
+        : Math.Max(132d, (AccessoryLaneWidth - (LiveWidgetCount * 8d)) / LiveWidgetCount);
+    private double GetLiveWidgetCardWidth(double compactWidth) =>
+        ShowAirPodsCard ? compactWidth : ExpandedLiveWidgetCardWidth;
+    public double WeatherWidgetWidth => GetLiveWidgetCardWidth(180d);
+    public double CountdownWidgetWidth => GetLiveWidgetCardWidth(136d);
+    public double MeetingWidgetWidth => GetLiveWidgetCardWidth(190d);
+    public double BatteryTimeWidgetWidth => GetLiveWidgetCardWidth(142d);
+    public double SmallLiveWidgetWidth => GetLiveWidgetCardWidth(132d);
+    private void RaiseLiveWidgetLayoutProperties() => RaiseMany(
+        nameof(LiveWidgetRailWidth), nameof(WeatherWidgetWidth), nameof(CountdownWidgetWidth),
+        nameof(MeetingWidgetWidth), nameof(BatteryTimeWidgetWidth), nameof(SmallLiveWidgetWidth));
     // Secondary widgets surfaced under the status panel in the redesigned expanded island (weather and the
     // system monitor get their own cards, so they're excluded here). Collapses the strip when nothing's on.
     public bool ShowStatusExtras => ShowBatteryLevel || IsCharging
@@ -1443,6 +1471,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(ShowAirPodsLeft), nameof(ShowAirPodsRight), nameof(ShowAirPodsCase),
             nameof(AirPodsLeftCharging), nameof(AirPodsRightCharging), nameof(AirPodsCaseCharging),
             nameof(AirPodsStatusText), nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody));
+        RaiseLiveWidgetLayoutProperties();
     }
 
     private void OnAirPodsChanged(object? sender, AirPodsState value) => OnUi(() =>
@@ -1534,6 +1563,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             nameof(BannerApp), nameof(BannerTitle), nameof(BannerBody),
             nameof(ShowClipboard), nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth), nameof(ShowStatusExtras),
             nameof(UseRealSpectrum), nameof(ShowAnimatedWave), nameof(PinExpanded), nameof(ScrollTitles));
+        RaiseLiveWidgetLayoutProperties();
         RaiseMediaCommandsCanExecute();
         (ToggleMuteCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
@@ -1557,6 +1587,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         UpdateCachedSettings();
         RaiseMany(nameof(ShowQuickLaunch), nameof(LaunchItems), nameof(ShowWorldClocks), nameof(WorldClocks),
             nameof(ShowWidgetsPanel), nameof(LiveWidgetRailWidth));
+        RaiseLiveWidgetLayoutProperties();
+
     }
 
     private void UpdateCachedSettings()

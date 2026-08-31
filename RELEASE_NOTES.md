@@ -1,3 +1,17 @@
+# Dynamic Island v1.0.9
+
+## Responsive expanded widgets
+
+- Live widgets now fill the full accessory lane whenever connected AirPods are not present.
+- When AirPods connect, their dedicated card returns and the widget cards contract into the shared row.
+- Weather, countdown, meetings, battery time, world clocks, and stocks share reclaimed space evenly while retaining horizontal scrolling for larger sets.
+
+## Verification
+
+- Release build: succeeded with 0 warnings and 0 errors.
+- Automated tests: 97 passed, 0 failed, 0 skipped.
+
+---
 # Dynamic Island v1.0.8
 
 ## Expanded live-widget layout

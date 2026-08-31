@@ -82,6 +82,15 @@ The layout follows Apple's guidance to preserve information between compact and 
 - Root app: republished and relaunched successfully as process 20344.
 - Post-fix visual evidence: pending a weather-plus-countdown screenshot.
 
+### Pass 8 â€” disconnected-AirPods accessory lane
+
+- [P1] When no AirPods card was present, weather and countdown remained confined to the 332-DIP rail, leaving the rest of the 64-DIP accessory lane empty.
+  - Evidence: user-supplied expanded-island screenshot, `codex-clipboard-2QE2Zm.png`.
+  - Fix: the widget rail now occupies the full accessory lane when AirPods are absent. Enabled cards divide that width evenly; when AirPods reconnect, cards return to their compact widths beside the dedicated AirPods card.
+- Release build: succeeded with zero warnings and zero errors.
+- Automated tests: 97 passed, 0 failed, 0 skipped.
+- Root app: republished and relaunched successfully as process 16396.
+- Post-fix visual evidence: pending a screenshot of the same disconnected-AirPods state.
 ## Required fidelity surfaces
 
 - Fonts and typography: the inline activity uses the existing Segoe UI Variable hierarchy at 10.5 and 8 DIP with semibold/bold optical contrast; post-fix capture is pending.
@@ -97,7 +106,7 @@ The layout follows Apple's guidance to preserve information between compact and 
   - Evidence: the pre-fix screenshot shows the detached orb, while the new build and process evidence do not show the revised pixels.
   - Impact: final pill width, truncation, control clearance, and motion endpoint cannot yet be visually certified.
   - Fix: capture the expanded camera-active state and compare it directly with the pre-fix expanded screenshot.
-- [P1] The rebuilt dynamic widget rail has not been captured.
+- [P1] The rebuilt dynamic widget rail has not been captured, including the disconnected-AirPods fill state.
   - Location: expanded AirPods and live-widget accessory lane.
   - Evidence: the source screenshot shows countdown clipped after weather; code, build, test, and process evidence confirm the fix is running but do not show its pixels.
   - Impact: final AirPods truncation and full countdown visibility cannot yet be visually certified.
@@ -108,6 +117,7 @@ The layout follows Apple's guidance to preserve information between compact and 
 - Capture the expanded camera-active state.
 - Confirm the outside orb is absent.
 - Confirm the inline activity is snug, legible, and clear of the controls and progress bar.
+- Capture the disconnected-AirPods state with weather and countdown enabled; confirm both cards fill the accessory lane without overflow.
 - Capture AirPods, weather, and countdown together and confirm all three cards remain legible.
 
 final result: blocked
