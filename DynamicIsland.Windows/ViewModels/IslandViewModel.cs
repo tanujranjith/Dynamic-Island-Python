@@ -58,6 +58,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     private readonly System.Windows.Threading.DispatcherTimer _quoteTimer = new();
     private readonly System.Windows.Threading.DispatcherTimer _visualizerTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly System.Windows.Threading.DispatcherTimer _connectivityTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly System.Windows.Threading.DispatcherTimer _qAutoCloseTimer = new();
     private double _visualizerPhase;
     private (string Label, TimeZoneInfo Zone)[] _worldClockZones = [];
     private string _worldClockConfig = string.Empty;
@@ -164,6 +165,11 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _visualizerTimer.Start();
         _connectivityTimer.Tick += (_, _) => OnUi(() => RaiseMany(nameof(WifiConnected), nameof(WifiStatusText), nameof(WifiStatusBrush)));
         _connectivityTimer.Start();
+        _qAutoCloseTimer.Tick += (_, _) =>
+        {
+            _qAutoCloseTimer.Stop();
+            if (Settings.QAutoCloseAfterResponse && QState == QRunState.Complete) ClearQ();
+        };
         LaunchCommand = new RelayCommand<string>(LaunchApp);
         OpenMeetingCommand = new RelayCommand(() => { if (!string.IsNullOrWhiteSpace(_meeting?.JoinUrl)) OpenUrl(_meeting!.JoinUrl); });
         SeekCommand = new RelayCommand<double>(f => _ = _mediaService.SeekFractionAsync(f));
@@ -327,8 +333,13 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
             return $"{plan}{reset}{runtime}";
         }
     }
-    public bool ShowCompactMediaContent => ShowMedia && !IsQActive;
-    public bool ShowCompactQContent => IsQActive;
+    public bool IsEdgePill => Settings.DefaultPosition is PositionMode.TopLeft or PositionMode.TopRight;
+    public bool IsHolePunchMode => Settings.IslandWidth <= 90 && Settings.IslandHeight <= 48;
+    public bool ShowCompactMediaContent => ShowMedia && !IsQActive && !IsHolePunchMode;
+    public bool ShowCompactQContent => IsQActive && !IsHolePunchMode;
+    public bool ShowCompactHolePunchQOutput => IsQActive && IsHolePunchMode;
+    public bool ShowCompactArtSurface => !IsQActive && ((ShowMedia && !IsHolePunchMode) || (IsHolePunchMode && HasArtwork));
+    public bool ShowCompactStatusContent => !IsHolePunchMode;
 
     private static string CleanQResponseText(string response)
     {
@@ -381,8 +392,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     public bool ShowCompactArt => Settings.ShowAlbumArtInCompact && HasArtwork && PrimaryActivity == IslandActivity.Media;
     public double AlbumScale => Math.Clamp(Settings.AlbumArtScale, 70, 130) / 100.0;
     public double ExpandedAlbumScale => AlbumScale * Math.Clamp(Settings.ExpandedAlbumArtSize, 40, 160) / 100.0;
-    public double PreviewIslandWidth => Math.Clamp(Settings.IslandWidth, 190, 360);
-    public double PreviewIslandHeight => Math.Clamp(Settings.IslandHeight, 50, 90);
+    public double PreviewIslandWidth => Math.Clamp(Settings.IslandWidth, 72, 360);
+    public double PreviewIslandHeight => Math.Clamp(Settings.IslandHeight, 38, 90);
     // Keep the two album-size controls useful without allowing them to break the compact/expanded layouts.
     // Keep artwork comfortably inside the compact pill so a large album-art preference cannot
     // crowd out the title and status lane on small custom heights.
@@ -861,7 +872,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     }
 
     // ===== Behaviour =====
-    public bool PinExpanded => KeepExpanded || Settings.AlwaysExpanded;
+    public bool PinExpanded => KeepExpanded || (Settings.AlwaysExpanded && !IsHolePunchMode);
     public string MediaTitle => Media.HasSession ? (Media.DisplayTitle ?? "Media") : "No media playing";
     public string MediaArtist => Media.HasSession
         ? string.Join("  |  ", new[] { Media.Artist, Media.SourceAppName }.Where(x => !string.IsNullOrWhiteSpace(x)))
@@ -1045,7 +1056,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         _mediaService.SetPreferredApp(Settings.SelectedMediaApp);
         IsDarkTheme = _themeService.IsDark(Settings.Theme);
-        if (Settings.AlwaysExpanded) IsExpanded = true;
+        if (Settings.AlwaysExpanded && !IsHolePunchMode) IsExpanded = true;
+        else if (IsHolePunchMode && !IsQActive && !KeepExpanded) IsExpanded = false;
         UpdateCachedSettings();
         RaiseSettingsChanged();
         RaisePropertyChanged(nameof(PinExpanded));
@@ -1062,8 +1074,9 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
     {
         if (!Settings.QEnabled) return;
         if (targetWindow != nint.Zero) _qTargetWindow = targetWindow;
+        _qAutoCloseTimer.Stop();
         _qSession.Cancel();
-        IsExpanded = true;
+        if (Settings.QAutoExpandIsland) IsExpanded = true;
         OnUi(() =>
         {
             // Make Q the active presentation before capture/OCR starts. Capture can take a
@@ -1148,8 +1161,8 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseQProperties();
     }
 
-    public void CancelQ() => _qSession.Cancel();
-    public void ClearQ() { _qSession.Clear(); IsExpanded = false; }
+    public void CancelQ() { _qAutoCloseTimer.Stop(); _qSession.Cancel(); }
+    public void ClearQ() { _qAutoCloseTimer.Stop(); _qSession.Clear(); IsExpanded = false; }
     public void CopyQResponse() { if (!string.IsNullOrWhiteSpace(QResponse)) System.Windows.Clipboard.SetText(QResponse); }
 
     private async Task RefreshCodexModelsAsync()
@@ -1228,11 +1241,23 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         RaiseQProperties();
     });
 
-    private void RaiseQProperties() => RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QHeaderStatusText), nameof(QResponse), nameof(QResponseDisplay), nameof(QPromptText), nameof(QPromptDisplay), nameof(QHasPrompt), nameof(QInlineStatusText), nameof(QShowInlineThinking), nameof(QCanStop), nameof(QCanCopyResponse), nameof(QCanRetry), nameof(QShowResponseActions), nameof(QError), nameof(QShortcuts), nameof(QHasShortcuts), nameof(QSelectedModel), nameof(QModelOptions), nameof(QReasoningEffort), nameof(QReasoningEffortOptions), nameof(QIsCodexSelected), nameof(QCodexIsConnected), nameof(QShowCodexSignOut), nameof(QCodexChipText), nameof(QCodexAccountDetails),
+    private void RaiseQProperties()
+    {
+        UpdateQAutoCloseTimer();
+        RaiseMany(nameof(QState), nameof(QCurrentMode), nameof(QStatusText), nameof(QHeaderStatusText), nameof(QResponse), nameof(QResponseDisplay), nameof(QPromptText), nameof(QPromptDisplay), nameof(QHasPrompt), nameof(QInlineStatusText), nameof(QShowInlineThinking), nameof(QCanStop), nameof(QCanCopyResponse), nameof(QCanRetry), nameof(QShowResponseActions), nameof(QError), nameof(QShortcuts), nameof(QHasShortcuts), nameof(QSelectedModel), nameof(QModelOptions), nameof(QReasoningEffort), nameof(QReasoningEffortOptions), nameof(QIsCodexSelected), nameof(QCodexIsConnected), nameof(QShowCodexSignOut), nameof(QCodexChipText), nameof(QCodexAccountDetails),
         nameof(QSourceText), nameof(QCompactText), nameof(IsQActive), nameof(ShowQSurface), nameof(QIsAsk), nameof(QIsSay), nameof(QIsListening),
-        nameof(QNeedsConsent), nameof(QSpeechAvailable), nameof(QSelectedProvider), nameof(ShowCompactMediaContent), nameof(ShowCompactQContent),
+        nameof(QNeedsConsent), nameof(QSpeechAvailable), nameof(QSelectedProvider), nameof(ShowCompactMediaContent), nameof(ShowCompactQContent), nameof(ShowCompactHolePunchQOutput), nameof(ShowCompactArtSurface), nameof(ShowCompactStatusContent),
         nameof(PrimaryActivity), nameof(CompactGlyph), nameof(CompactPrimaryText), nameof(CompactSecondaryText), nameof(ShowCompactArt),
         nameof(ShowCompactMediaRing), nameof(ShowCompactTimerRing), nameof(ShowCompactRingTrack));
+    }
+
+    private void UpdateQAutoCloseTimer()
+    {
+        _qAutoCloseTimer.Stop();
+        if (!Settings.QAutoCloseAfterResponse || QState != QRunState.Complete) return;
+        _qAutoCloseTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(Settings.QAutoCloseDelaySeconds, 1, 300));
+        _qAutoCloseTimer.Start();
+    }
 
     private void OnMediaChanged(object? sender, MediaInfo value) => OnUi(() =>
     {
@@ -1571,7 +1596,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
 
     private void RaiseLayoutProperties()
     {
-        RaiseMany(nameof(IsCompact), nameof(IsAppleStyle), nameof(IsStatsStyle), nameof(PinExpanded),
+        RaiseMany(nameof(IsCompact), nameof(IsAppleStyle), nameof(IsStatsStyle), nameof(PinExpanded), nameof(IsEdgePill), nameof(IsHolePunchMode),
             nameof(IslandCornerRadius), nameof(IslandInnerCornerRadius),
             nameof(CompactAlbumSize), nameof(ExpandedAlbumSize), nameof(PreviewCompactAlbumSize), nameof(PreviewExpandedAlbumSize),
             nameof(CompactAlbumRadius), nameof(ExpandedAlbumRadius), nameof(PreviewCompactAlbumRadius), nameof(PreviewExpandedAlbumRadius),
@@ -1804,6 +1829,7 @@ public sealed class IslandViewModel : ObservableObject, IDisposable
         _quoteTimer.Stop();
         _visualizerTimer.Stop();
         _connectivityTimer.Stop();
+        _qAutoCloseTimer.Stop();
         _batteryService.Changed -= OnBatteryChanged;
         _clockService.Tick -= OnClockTick;
         _timerAlarmService.Changed -= OnTimerAlarmChanged;

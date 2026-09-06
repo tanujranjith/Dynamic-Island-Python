@@ -72,7 +72,7 @@ public sealed class WindowPositionService
 
     }
 
-    public void PositionInitial(Window window, AppSettings settings)
+    public void PositionInitial(Window window, AppSettings settings, double? visiblePillWidthDip = null)
     {
         var handle = new WindowInteropHelper(window).Handle;
         if (handle == nint.Zero) return;
@@ -86,6 +86,8 @@ public sealed class WindowPositionService
         var heightDip = WindowSizingPolicy.EffectiveDimension(window.Height, window.ActualHeight);
         var width = (int)Math.Round(widthDip * dpi / 96d);
         var height = (int)Math.Round(heightDip * dpi / 96d);
+        var pillWidth = (int)Math.Round(Math.Clamp(visiblePillWidthDip ?? settings.IslandWidth, 72, 1200) * dpi / 96d);
+        var edgeOverhang = Math.Max(0, (width - pillWidth) / 2);
 
         int x;
         int y;
@@ -97,7 +99,12 @@ public sealed class WindowPositionService
         }
         else if (settings.DefaultPosition == PositionMode.TopLeft)
         {
-            x = screen.WorkingArea.Left + 18;
+            x = screen.WorkingArea.Left + 18 - edgeOverhang;
+            y = TopY(screen, settings, dpi / 96d, workingArea: true);
+        }
+        else if (settings.DefaultPosition == PositionMode.TopRight)
+        {
+            x = screen.WorkingArea.Right - pillWidth - 18 - edgeOverhang;
             y = TopY(screen, settings, dpi / 96d, workingArea: true);
         }
         else
@@ -106,7 +113,8 @@ public sealed class WindowPositionService
             y = TopY(screen, settings, dpi / 96d, workingArea: false);
         }
 
-        var visible = EnsureVisible(screen, x, y, width, height);
+        var visibleWidth = settings.DefaultPosition is PositionMode.TopLeft or PositionMode.TopRight ? pillWidth : width;
+        var visible = EnsureVisible(screen, x, y, width, height, visibleWidth);
         NativeMethods.SetWindowPos(handle, nint.Zero, visible.X, visible.Y, width, height,
             NativeMethods.SwpNoActivate | NativeMethods.SwpNoZOrder);
     }
@@ -120,10 +128,15 @@ public sealed class WindowPositionService
         var dpi = Math.Max(96u, NativeMethods.GetDpiForWindow(handle));
         var width = (int)Math.Round(window.ActualWidth * dpi / 96d);
         var topLeft = settings.DefaultPosition == PositionMode.TopLeft;
+        var topRight = settings.DefaultPosition == PositionMode.TopRight;
+        var compactWidth = (int)Math.Round(Math.Clamp(settings.IslandWidth, 72, 360) * dpi / 96d);
+        var edgeOverhang = Math.Max(0, (width - compactWidth) / 2);
         int x = topLeft
-            ? screen.WorkingArea.Left + 18
-            : screen.Bounds.Left + (screen.Bounds.Width - width) / 2;
-        int y = TopY(screen, settings, dpi / 96d, topLeft);
+            ? screen.WorkingArea.Left + 18 - edgeOverhang
+            : topRight
+                ? screen.WorkingArea.Right - compactWidth - 18 - edgeOverhang
+                : screen.Bounds.Left + (screen.Bounds.Width - width) / 2;
+        int y = TopY(screen, settings, dpi / 96d, topLeft || topRight);
         NativeMethods.SetWindowPos(handle, nint.Zero, x, y, 0, 0,
             NativeMethods.SwpNoActivate | NativeMethods.SwpNoZOrder | NativeMethods.SwpNoSize);
     }
@@ -142,6 +155,8 @@ public sealed class WindowPositionService
         var widthPx = Math.Max(1, (int)Math.Round(widthDip * scale));
         var heightPx = Math.Max(1, (int)Math.Round(heightDip * scale));
         var screen = SelectScreen(settings);
+        var compactWidthPx = (int)Math.Round(Math.Clamp(settings.IslandWidth, 72, 360) * scale);
+        var edgeOverhang = Math.Max(0, (widthPx - compactWidthPx) / 2);
 
         int x, y;
         if (settings.DefaultPosition == PositionMode.Manual &&
@@ -152,7 +167,12 @@ public sealed class WindowPositionService
         }
         else if (settings.DefaultPosition == PositionMode.TopLeft)
         {
-            x = screen.WorkingArea.Left + 18;
+            x = screen.WorkingArea.Left + 18 - edgeOverhang;
+            y = TopY(screen, settings, scale, workingArea: true);
+        }
+        else if (settings.DefaultPosition == PositionMode.TopRight)
+        {
+            x = screen.WorkingArea.Right - compactWidthPx - 18 - edgeOverhang;
             y = TopY(screen, settings, scale, workingArea: true);
         }
         else
@@ -217,10 +237,13 @@ public sealed class WindowPositionService
         return Forms.Screen.PrimaryScreen ?? Forms.Screen.AllScreens.First();
     }
 
-    private static (int X, int Y) EnsureVisible(Forms.Screen screen, int x, int y, int width, int height)
+    private static (int X, int Y) EnsureVisible(Forms.Screen screen, int x, int y, int width, int height, int visibleWidth)
     {
         var bounds = screen.WorkingArea;
-        var safeX = Math.Clamp(x, bounds.Left, Math.Max(bounds.Left, bounds.Right - Math.Min(width, bounds.Width)));
+        var overhang = Math.Max(0, (width - Math.Min(visibleWidth, width)) / 2);
+        var minX = bounds.Left - overhang;
+        var maxX = bounds.Right - Math.Min(visibleWidth, width) - overhang;
+        var safeX = Math.Clamp(x, minX, Math.Max(minX, maxX));
         // Allow the window slightly above the top so the transparent margin can sit off-screen and the
         // pill can hug the top edge.
         var minY = bounds.Top - 40;

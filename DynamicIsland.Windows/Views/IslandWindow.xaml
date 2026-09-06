@@ -467,7 +467,7 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Grid Width="{Binding CompactAlbumSize}" Height="{Binding CompactAlbumSize}" VerticalAlignment="Center"
-                          Visibility="{Binding ShowCompactMediaContent, Converter={StaticResource BoolToVisibility}}">
+                          Visibility="{Binding ShowCompactArtSurface, Converter={StaticResource BoolToVisibility}}">
                         <Border CornerRadius="{Binding CompactIconCorner}" Background="{Binding IslandCardBrush}">
                             <TextBlock Text="{Binding CompactGlyph}" FontFamily="Segoe Fluent Icons" FontSize="{Binding CompactGlyphFontSize}"
                                        Foreground="{Binding AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -497,7 +497,11 @@
                         <TextBlock Text="{Binding QStatusText}" Margin="0,2,0,0" FontFamily="{Binding UiFontFamily}" FontSize="{Binding CompactSecondaryFontSize}"
                                    Foreground="{Binding SecondaryTextBrush}" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Grid.ColumnSpan="3" Text="{Binding QCompactText}" FontFamily="{Binding UiFontFamily}" FontSize="{Binding CompactPrimaryFontSize}" FontWeight="SemiBold"
+                               Foreground="{Binding PrimaryTextBrush}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Margin="8,0" Visibility="{Binding ShowCompactHolePunchQOutput, Converter={StaticResource BoolToVisibility}}" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding ShowCompactStatusContent, Converter={StaticResource BoolToVisibility}}">
                         <Border Width="1" Height="30" Margin="0,0,12,0" Background="{Binding IslandDividerBrush}"
                                 Visibility="{Binding ShowCompactRam, Converter={StaticResource BoolToVisibility}}" />
                         <StackPanel Margin="0,0,13,0" Visibility="{Binding ShowCompactRam, Converter={StaticResource BoolToVisibility}}">

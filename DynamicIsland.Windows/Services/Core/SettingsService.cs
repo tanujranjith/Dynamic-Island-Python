@@ -76,15 +76,17 @@ public sealed class SettingsService(LoggingService log)
             settings.QMaxResponseTokens = 8192;
         if (previousSchema < 6)
             settings.ShowIslandInScreenshots = false;
-        settings.SchemaVersion = Math.Max(9, settings.SchemaVersion);
+        if (previousSchema < 10)
+            settings.QAutoExpandIsland = true;
+        settings.SchemaVersion = Math.Max(10, settings.SchemaVersion);
         settings.SelectedMediaApp = string.IsNullOrWhiteSpace(settings.SelectedMediaApp)
             ? "Automatic" : settings.SelectedMediaApp;
         settings.CollapseDelayMilliseconds = Math.Clamp(settings.CollapseDelayMilliseconds, 100, 5000);
         if (!Enum.IsDefined(settings.Theme)) settings.Theme = ThemeMode.System;
         if (!Enum.IsDefined(settings.IslandSize)) settings.IslandSize = IslandSize.Normal;
         if (!Enum.IsDefined(settings.IslandVisualMode)) settings.IslandVisualMode = IslandVisualMode.Apple;
-        settings.IslandWidth = Math.Clamp(settings.IslandWidth, 190, 360);
-        settings.IslandHeight = Math.Clamp(settings.IslandHeight, 50, 90);
+        settings.IslandWidth = Math.Clamp(settings.IslandWidth, 72, 360);
+        settings.IslandHeight = Math.Clamp(settings.IslandHeight, 38, 90);
         if (!Enum.IsDefined(settings.AnimationIntensity)) settings.AnimationIntensity = AnimationIntensity.Normal;
         if (!Enum.IsDefined(settings.DefaultPosition)) settings.DefaultPosition = PositionMode.TopCenter;
         if (settings.DefaultPosition == PositionMode.Manual &&
@@ -110,6 +112,7 @@ public sealed class SettingsService(LoggingService log)
         settings.QSelectedModel = string.IsNullOrWhiteSpace(settings.QSelectedModel) ? "gpt-4o-mini" : settings.QSelectedModel.Trim();
         settings.QOllamaBaseUrl = string.IsNullOrWhiteSpace(settings.QOllamaBaseUrl) ? "http://localhost:11434" : settings.QOllamaBaseUrl.TrimEnd('/');
         settings.QTimeoutSeconds = Math.Clamp(settings.QTimeoutSeconds, 10, 300);
+        settings.QAutoCloseDelaySeconds = Math.Clamp(settings.QAutoCloseDelaySeconds, 1, 300);
         settings.QMaxResponseTokens = Math.Clamp(settings.QMaxResponseTokens, 2048, 32768);
         settings.QReasoningEffort = settings.QReasoningEffort?.Trim().ToLowerInvariant() switch
         {

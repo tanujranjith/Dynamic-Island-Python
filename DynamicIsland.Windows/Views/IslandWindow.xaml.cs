@@ -460,8 +460,8 @@ public partial class IslandWindow : Window
         // Compact dimensions are user-controlled and deliberately independent from the expanded
         // canvas.  Previously this method ignored IslandWidth/IslandHeight and used a preset for
         // both states, so adjusting the mini island could distort the expanded layout.
-        var compactWidth = Math.Clamp(_viewModel.Settings.IslandWidth, 190d, 360d);
-        var compactHeight = Math.Clamp(_viewModel.Settings.IslandHeight, 50d, 90d);
+        var compactWidth = Math.Clamp(_viewModel.Settings.IslandWidth, 72d, 360d);
+        var compactHeight = Math.Clamp(_viewModel.Settings.IslandHeight, 38d, 90d);
         var (expandedWidth, expandedHeight) = _viewModel.Settings.IslandSize switch
         {
             // The media header, transport controls, and the live-activity cards need 260px+
@@ -543,13 +543,14 @@ public partial class IslandWindow : Window
             Width = m.winW;
             Height = desiredWindowHeight;
         }
-        _position.PositionInitial(this, _viewModel.Settings);
+        var targetPillWidth = _timerPanelOpen ? TimerPanelWidth : _viewModel.IsExpanded ? ExpandedPillSize().W : m.cW;
+        _position.PositionInitial(this, _viewModel.Settings, targetPillWidth);
         AnimatePill(animate);
     }
 
     private void UpdateTimerOrbLayout(double compactWidth, double compactHeight)
     {
-        var size = Math.Clamp(compactHeight, 50d, 62d);
+        var size = Math.Clamp(compactHeight, 38d, 62d);
         CompactTimerOrb.Width = size;
         CompactTimerOrb.Height = size;
         TimerOrbTranslate.X = compactWidth / 2d + 8d + size / 2d;
@@ -601,7 +602,7 @@ public partial class IslandWindow : Window
         QContent.Height = qHeight;
         QContent.MaxHeight = q ? qHeight : double.PositiveInfinity;
         QContent.VerticalAlignment = q ? VerticalAlignment.Top : VerticalAlignment.Stretch;
-        SetModeContent(CompactContent, apple && !expanded && !_timerPanelOpen);
+        SetModeContent(CompactContent, !expanded && !_timerPanelOpen && (apple || _viewModel.IsEdgePill || _viewModel.IsHolePunchMode));
         // The full Apple activity deck is the stable shared expanded surface. The compact Stats
         // layout still provides the dense glanceable alternative, while this prevents Stats mode
         // from ever opening into an empty shell during rapid hover/settings transitions.
@@ -613,7 +614,7 @@ public partial class IslandWindow : Window
         // makes the Island render as a black shell even though the child overlay is visible.
         SetModeContent(ExpandedContent, expanded || _timerPanelOpen);
         SetModeContent(QContent, expanded && q);
-        SetModeContent(StatsCompactContent, !apple && !expanded && !_timerPanelOpen);
+        SetModeContent(StatsCompactContent, !apple && !_viewModel.IsEdgePill && !_viewModel.IsHolePunchMode && !expanded && !_timerPanelOpen);
         SetModeContent(StatsExpandedContent, false);
         SetModeContent(StatsOverlay, !apple && expanded && !_timerPanelOpen);
         SetModeContent(TimerPanelContent, _timerPanelOpen && !q);

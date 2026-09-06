@@ -5,7 +5,7 @@ public enum NotificationFilter { All, Allowlist, Blocklist }
 public enum IslandSize { Compact, Normal, Large }
 public enum IslandVisualMode { Apple, Stats }
 public enum AnimationIntensity { Reduced, Normal, Expressive }
-public enum PositionMode { TopCenter, TopLeft, Manual }
+public enum PositionMode { TopCenter, TopLeft, TopRight, Manual }
 public enum QuotePlacement { Off, Compact, Expanded, Both }
 public enum QuoteRotation { Static, EveryExpand, EveryMinute, Every5Minutes, Every15Minutes, Every30Minutes, EveryHour }
 public enum QCaptureMode { ActiveWindow, ActiveMonitor }
@@ -141,6 +141,9 @@ public sealed class AppSettings
 
     // ===== Q visual assistant =====
     public bool QEnabled { get; set; } = true;
+    public bool QAutoExpandIsland { get; set; } = true;
+    public bool QAutoCloseAfterResponse { get; set; }
+    public int QAutoCloseDelaySeconds { get; set; } = 10;
     public string QSelectedProvider { get; set; } = "openai";
     public string QSelectedModel { get; set; } = "gpt-4o-mini";
     public QCaptureMode QCaptureMode { get; set; } = QCaptureMode.ActiveWindow;

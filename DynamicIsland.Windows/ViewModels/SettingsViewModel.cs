@@ -144,13 +144,13 @@ public sealed class SettingsViewModel : ObservableObject
     }
     public int IslandWidth
     {
-        get => Math.Clamp(_settings.IslandWidth, 190, 360);
-        set { _settings.IslandWidth = Math.Clamp(value, 190, 360); _settings.AutoGrowPill = false; RaisePropertyChanged(); RaisePropertyChanged(nameof(AutoGrowPill)); _apply(); }
+        get => Math.Clamp(_settings.IslandWidth, 72, 360);
+        set { _settings.IslandWidth = Math.Clamp(value, 72, 360); _settings.AutoGrowPill = false; RaisePropertyChanged(); RaisePropertyChanged(nameof(AutoGrowPill)); _apply(); }
     }
     public int IslandHeight
     {
-        get => Math.Clamp(_settings.IslandHeight, 50, 90);
-        set { _settings.IslandHeight = Math.Clamp(value, 50, 90); _settings.AutoGrowPill = false; RaisePropertyChanged(); RaisePropertyChanged(nameof(AutoGrowPill)); _apply(); }
+        get => Math.Clamp(_settings.IslandHeight, 38, 90);
+        set { _settings.IslandHeight = Math.Clamp(value, 38, 90); _settings.AutoGrowPill = false; RaisePropertyChanged(); RaisePropertyChanged(nameof(AutoGrowPill)); _apply(); }
     }
     public int IslandCornerRadius
     {
@@ -171,7 +171,7 @@ public sealed class SettingsViewModel : ObservableObject
     public System.Windows.CornerRadius PreviewMiniCorner => new(ClampedIslandRadius * 0.5);
     public bool ScrollLongTitles { get => _settings.ScrollLongTitles; set { Set(v => _settings.ScrollLongTitles = v, value); _apply(); } }
     public AnimationIntensity AnimationIntensity { get => _settings.AnimationIntensity; set => Set(v => _settings.AnimationIntensity = v, value); }
-    public PositionMode DefaultPosition { get => _settings.DefaultPosition; set => Set(v => _settings.DefaultPosition = v, value); }
+    public PositionMode DefaultPosition { get => _settings.DefaultPosition; set { Set(v => _settings.DefaultPosition = v, value); _apply(); } }
     public int TopOffset
     {
         get => _settings.TopOffset;
@@ -328,6 +328,9 @@ public sealed class SettingsViewModel : ObservableObject
     public string NotificationAppFilter { get => _settings.NotificationAppFilter; set { Set(v => _settings.NotificationAppFilter = v ?? "", value); _apply(); } }
     public bool ShowPrivacyIndicators { get => _settings.ShowPrivacyIndicators; set { Set(v => _settings.ShowPrivacyIndicators = v, value); _apply(); } }
     public bool QEnabled { get => _settings.QEnabled; set { Set(v => _settings.QEnabled = v, value); _apply(); } }
+    public bool QAutoExpandIsland { get => _settings.QAutoExpandIsland; set { Set(v => _settings.QAutoExpandIsland = v, value); _apply(); } }
+    public bool QAutoCloseAfterResponse { get => _settings.QAutoCloseAfterResponse; set { Set(v => _settings.QAutoCloseAfterResponse = v, value); _apply(); } }
+    public int QAutoCloseDelaySeconds { get => _settings.QAutoCloseDelaySeconds; set => SetSize(v => _settings.QAutoCloseDelaySeconds = v, value, 1, 300); }
     public string QSelectedProvider
     {
         get => _settings.QSelectedProvider;

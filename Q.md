@@ -1,8 +1,10 @@
 # Q visual assistant
 
 Q is Dynamic Island’s on-demand visual assistant. Press `Ctrl+Alt+Q` from another
-application to capture the current context, expand the Island, and ask a question
-without opening a separate chat window.
+application to capture the current context and ask a question without opening a
+separate chat window. By default, Q expands the Island automatically. Disable
+**Auto-expand island for Q** in **Settings → Q Assistant** if you want Q to stay
+compact when it is invoked.
 
 ## Setup
 
@@ -15,6 +17,10 @@ without opening a separate chat window.
 5. Choose **Reasoning effort**. **Auto** uses the provider/model default; explicit
    values are sent when supported by the selected model.
 6. Use **Test connection**, then invoke Q with `Ctrl+Alt+Q`.
+
+In **Settings → Q Assistant**, enable **Auto-close Q after response** if you want
+completed Q sessions to close automatically. **Q auto-close delay** controls the
+wait before closing, from 1 to 300 seconds; it is off by default.
 
 ### ChatGPT / Codex sign-in
 
