@@ -1,3 +1,20 @@
+# Dynamic Island v1.0.11
+
+## Q and responsive pill controls
+
+- Ctrl+Alt+Q expands the Island by default, with a setting to disable auto-expansion.
+- Added adjustable Q auto-close behavior with a 1–300 second response delay.
+- Added smaller pill width and height controls, left/right edge positioning, and hole-punch presentation.
+- Fixed expanded edge pills being clipped off-screen and preserved hover expansion.
+- Hole-punch mode keeps album artwork visible and shows Q output without the full expanded layout.
+
+## Verification
+
+- Release build: succeeded with 0 warnings and 0 errors.
+- Root executable: rebuilt, hash-verified, and relaunched.
+
+---
+
 # Dynamic Island v1.0.10
 
 ## New playback and connectivity features
